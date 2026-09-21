@@ -26,6 +26,8 @@ from xui import (
 
 dp = Dispatcher()
 
+BOT_VERSION = "1.0.6"
+
 ADMIN_URL = "https://t.me/kittyvpnoff?direct"
 CHANNEL = "@kittyvpnoff"
 SUPPORT_URL = "https://t.me/kittyvpn_support_robot"
@@ -299,7 +301,7 @@ async def kitty_admin(message: Message):
         return
 
     await message.answer(
-        "⚙️ админ-панель\n\n"
+        f"⚙️ админ-панель\n\nверсия бота: {BOT_VERSION}\n\n"
         "выбери действие:",
         reply_markup=admin_keyboard(),
     )
