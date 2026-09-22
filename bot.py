@@ -230,7 +230,7 @@ async def start_trial(callback: CallbackQuery):
         f"🆔 telegram id: `{tg_id}`\n"
         f"🔗 sub id: `{client['sub_id']}`",
     )
-    await callback.message.answer(
+    await callback.message.edit_text(
         "🎁 trial активирован!\n\n"
         "🔗 json-подписка:\n"
         f"{client['subscription_url']}\n\n"
@@ -268,7 +268,7 @@ async def devices(callback: CallbackQuery):
     limit = client.get("limitHwid", 0)
     text = "\n".join(f"• {d.get('deviceModel') or 'неизвестное устройство'}" for d in device_list) if device_list else "нет зарегистрированных устройств"
     await callback.answer()
-    await callback.message.answer(
+    await callback.message.edit_text(
         "📱 устройства\n\n"
         f"используется: {len(device_list)} / {limit}\n\n{text}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -289,9 +289,9 @@ async def delete_all_hwid(callback: CallbackQuery):
         delete_all_hwid_devices(user["email"])
     except Exception:
         logging.exception("failed to delete hwids")
-        await callback.message.answer("❌ не удалось удалить устройства.", reply_markup=main_keyboard())
+        await callback.message.edit_text("❌ не удалось удалить устройства.", reply_markup=main_keyboard())
         return
-    await callback.message.answer(
+    await callback.message.edit_text(
         "✅ все зарегистрированные устройства удалены.\n\nтеперь можно подключить устройство заново.",
         reply_markup=main_keyboard(),
     )
@@ -300,7 +300,7 @@ async def delete_all_hwid(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer(
+    await callback.message.edit_text(
         "🐈 главное меню",
         reply_markup=main_keyboard(),
     )
@@ -309,7 +309,7 @@ async def back_to_menu(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "purchase")
 async def purchase(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer(
+    await callback.message.edit_text(
         "💳 подписка\n\n3 устройства — 80 ₽ / месяц.\n\nдля покупки или продления напиши админу:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💬 написать админу", url=ADMIN_URL)]
@@ -320,7 +320,7 @@ async def purchase(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "support")
 async def support(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer(
+    await callback.message.edit_text(
         "🆘 поддержка\n\nесли что-то не работает или есть вопрос — создай обращение в тикет-системе:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL)]
@@ -331,7 +331,7 @@ async def support(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "about_service")
 async def about_service(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer(
+    await callback.message.edit_text(
         "ℹ️ о сервисе\n\nознакомиться с документами сервиса:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔒 политика конфиденциальности", url=PRIVACY_URL)],
@@ -351,7 +351,7 @@ async def promo(callback: CallbackQuery):
 
     user_action_waiting[callback.from_user.id] = "promo"
     await callback.answer()
-    await callback.message.answer("🎟 промокод\n\nотправь промокод одним сообщением.")
+    await callback.message.edit_text("🎟 промокод\n\nотправь промокод одним сообщением.")
 
 
 @dp.callback_query(lambda c: c.data == "admin_create_promo")
@@ -362,7 +362,7 @@ async def admin_create_promo(callback: CallbackQuery):
 
     admin_action_waiting[callback.from_user.id] = "create_promo"
     await callback.answer()
-    await callback.message.answer(
+    await callback.message.edit_text(
         "🎟 создание промокода\n\n"
         "отправь одной строкой:\n"
         "`код дни лимит`\n\n"
@@ -379,7 +379,7 @@ async def admin_bind_subscription(callback: CallbackQuery):
         return
     admin_action_waiting[callback.from_user.id] = "bind"
     await callback.answer()
-    await callback.message.answer("🔗 привязка подписки\n\nотправь одной строкой:\n`telegram_id sub_id`\n\nпример:\n`6682540155 99e9195c-75ce-4fa8-b313-a2eb3ebf7940`")
+    await callback.message.edit_text("🔗 привязка подписки\n\nотправь одной строкой:\n`telegram_id sub_id`\n\nпример:\n`6682540155 99e9195c-75ce-4fa8-b313-a2eb3ebf7940`")
 
 
 @dp.callback_query(lambda c: c.data == "admin_create_paid")
@@ -389,7 +389,7 @@ async def admin_create_paid(callback: CallbackQuery):
         return
     admin_action_waiting[callback.from_user.id] = "create_paid"
     await callback.answer()
-    await callback.message.answer("💳 создание оплаченного пользователя\n\nотправь telegram id пользователя.\n\nпример:\n`6682540155`")
+    await callback.message.edit_text("💳 создание оплаченного пользователя\n\nотправь telegram id пользователя.\n\nпример:\n`6682540155`")
 
 
 @dp.callback_query(lambda c: c.data == "admin_user_actions")
@@ -398,7 +398,7 @@ async def admin_user_actions(callback: CallbackQuery):
         await callback.answer("доступ запрещён", show_alert=True)
         return
     await callback.answer()
-    await callback.message.answer("👤 действия с пользователем\n\nвыбери действие:", reply_markup=admin_user_actions_keyboard())
+    await callback.message.edit_text("👤 действия с пользователем\n\nвыбери действие:", reply_markup=admin_user_actions_keyboard())
 
 
 @dp.callback_query(lambda c: c.data == "admin_renew")
@@ -408,7 +408,7 @@ async def admin_renew(callback: CallbackQuery):
         return
     admin_action_waiting[callback.from_user.id] = "renew"
     await callback.answer()
-    await callback.message.answer("🔄 продление\n\nотправь sub_id пользователя.")
+    await callback.message.edit_text("🔄 продление\n\nотправь sub_id пользователя.")
 
 
 @dp.callback_query(lambda c: c.data == "admin_ban")
@@ -418,7 +418,7 @@ async def admin_ban(callback: CallbackQuery):
         return
     admin_action_waiting[callback.from_user.id] = "ban"
     await callback.answer()
-    await callback.message.answer("⛔ бан пользователя\n\nотправь sub_id пользователя.")
+    await callback.message.edit_text("⛔ бан пользователя\n\nотправь sub_id пользователя.")
 
 
 @dp.callback_query(lambda c: c.data == "admin_back")
@@ -428,7 +428,7 @@ async def admin_back(callback: CallbackQuery):
         return
     admin_action_waiting.pop(callback.from_user.id, None)
     await callback.answer()
-    await callback.message.answer("⚙️ админ-панель\n\nвыбери действие:", reply_markup=admin_keyboard())
+    await callback.message.edit_text("⚙️ админ-панель\n\nвыбери действие:", reply_markup=admin_keyboard())
 
 
 @dp.message()
