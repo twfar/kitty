@@ -31,6 +31,13 @@ async def init_db():
             )
 
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS promo_codes (
                 code TEXT PRIMARY KEY,
                 reward_days INTEGER NOT NULL,
@@ -227,3 +234,27 @@ async def use_promo(code: str, tg_id: int, used_at: int) -> bool:
 
         await db.commit()
         return True
+
+
+async def get_setting(key: str, default=None):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute("SELECT value FROM bot_settings WHERE key = ?", (key,))
+        row = await cursor.fetchone()
+        return row[0] if row else default
+
+
+async def set_setting(key: str, value: str):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            """INSERT INTO bot_settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value""",
+            (key, value),
+        )
+        await db.commit()
+
+
+async def delete_setting(key: str):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("DELETE FROM bot_settings WHERE key = ?", (key,))
+        await db.commit()
