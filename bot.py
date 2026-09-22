@@ -121,10 +121,11 @@ async def get_subscription_data(user):
 async def send_subscription_info(message: Message, user):
     data = await get_subscription_data(user)
     if not data:
-        await message.answer(
+        await message.edit_text(
             "твоя подписка не найдена в системе.\n\nесли это ошибка, напиши в поддержку:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL)]
+                [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL)],
+                [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
             ]),
         )
         return
@@ -137,7 +138,7 @@ async def send_subscription_info(message: Message, user):
     except Exception:
         used = 0
 
-    await message.answer(
+    await message.edit_text(
         "🔗 твоя подписка\n\n"
         "📱 устройства: "
         f"{used} / {limit}\n"
@@ -273,7 +274,7 @@ async def devices(callback: CallbackQuery):
         f"используется: {len(device_list)} / {limit}\n\n{text}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🗑 удалить все устройства", callback_data="delete_all_hwid")],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
+            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
         ]),
     )
 
@@ -297,6 +298,16 @@ async def delete_all_hwid(callback: CallbackQuery):
     )
 
 
+@dp.callback_query(lambda c: c.data == "back_to_subscription")
+async def back_to_subscription(callback: CallbackQuery):
+    user = await get_user(callback.from_user.id)
+    if not user:
+        await callback.answer("сначала получи trial", show_alert=True)
+        return
+    await callback.answer()
+    await send_subscription_info(callback.message, user)
+
+
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
     await callback.answer()
@@ -312,7 +323,8 @@ async def purchase(callback: CallbackQuery):
     await callback.message.edit_text(
         "💳 подписка\n\n3 устройства — 80 ₽ / месяц.\n\nдля покупки или продления напиши админу:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💬 написать админу", url=ADMIN_URL)]
+            [InlineKeyboardButton(text="💬 написать админу", url=ADMIN_URL)],
+            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
         ]),
     )
 
@@ -323,7 +335,8 @@ async def support(callback: CallbackQuery):
     await callback.message.edit_text(
         "🆘 поддержка\n\nесли что-то не работает или есть вопрос — создай обращение в тикет-системе:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL)]
+            [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL)],
+            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
         ]),
     )
 
@@ -351,7 +364,12 @@ async def promo(callback: CallbackQuery):
 
     user_action_waiting[callback.from_user.id] = "promo"
     await callback.answer()
-    await callback.message.edit_text("🎟 промокод\n\nотправь промокод одним сообщением.")
+    await callback.message.edit_text(
+        "🎟 промокод\n\nотправь промокод одним сообщением.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")]
+        ]),
+    )
 
 
 @dp.callback_query(lambda c: c.data == "admin_create_promo")
@@ -379,7 +397,12 @@ async def admin_bind_subscription(callback: CallbackQuery):
         return
     admin_action_waiting[callback.from_user.id] = "bind"
     await callback.answer()
-    await callback.message.edit_text("🔗 привязка подписки\n\nотправь одной строкой:\n`telegram_id sub_id`\n\nпример:\n`6682540155 99e9195c-75ce-4fa8-b313-a2eb3ebf7940`")
+    await callback.message.edit_text(
+        "🔗 привязка подписки\n\nотправь одной строкой:\n`telegram_id sub_id`\n\nпример:\n`6682540155 99e9195c-75ce-4fa8-b313-a2eb3ebf7940`",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
+        ]),
+    )
 
 
 @dp.callback_query(lambda c: c.data == "admin_create_paid")
@@ -389,7 +412,12 @@ async def admin_create_paid(callback: CallbackQuery):
         return
     admin_action_waiting[callback.from_user.id] = "create_paid"
     await callback.answer()
-    await callback.message.edit_text("💳 создание оплаченного пользователя\n\nотправь telegram id пользователя.\n\nпример:\n`6682540155`")
+    await callback.message.edit_text(
+        "💳 создание оплаченного пользователя\n\nотправь telegram id пользователя.\n\nпример:\n`6682540155`",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
+        ]),
+    )
 
 
 @dp.callback_query(lambda c: c.data == "admin_user_actions")
@@ -408,7 +436,12 @@ async def admin_renew(callback: CallbackQuery):
         return
     admin_action_waiting[callback.from_user.id] = "renew"
     await callback.answer()
-    await callback.message.edit_text("🔄 продление\n\nотправь sub_id пользователя.")
+    await callback.message.edit_text(
+        "🔄 продление\n\nотправь sub_id пользователя.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_user_actions")]
+        ]),
+    )
 
 
 @dp.callback_query(lambda c: c.data == "admin_ban")
@@ -418,7 +451,12 @@ async def admin_ban(callback: CallbackQuery):
         return
     admin_action_waiting[callback.from_user.id] = "ban"
     await callback.answer()
-    await callback.message.edit_text("⛔ бан пользователя\n\nотправь sub_id пользователя.")
+    await callback.message.edit_text(
+        "⛔ бан пользователя\n\nотправь sub_id пользователя.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_user_actions")]
+        ]),
+    )
 
 
 @dp.callback_query(lambda c: c.data == "admin_back")
