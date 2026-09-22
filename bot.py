@@ -160,16 +160,22 @@ async def start(message: Message):
     user = await get_user(message.from_user.id)
     username = f"@{message.from_user.username}" if message.from_user.username else "—"
     sub_id = user["sub_id"] if user else "—"
-    await message.bot.send_message(
-        ADMIN_ID,
-        "🚀 новый /start\n\n"
-        f"👤 username: {username}\n"
-        f"🆔 telegram id: `{message.from_user.id}`\n"
-        f"🔗 sub id: `{sub_id}`",
-    )
+    if message.from_user.id != ADMIN_ID:
+        await message.bot.send_message(
+            ADMIN_ID,
+            "🚀 новый /start\n\n"
+            f"👤 username: {username}\n"
+            f"🆔 telegram id: `{message.from_user.id}`\n"
+            f"🔗 sub id: `{sub_id}`",
+        )
+
     if user:
-        await send_subscription_info(message, user)
+        await message.answer(
+            "🐈 главное меню",
+            reply_markup=main_keyboard(),
+        )
         return
+
     await message.answer(
         "привет 👋\n\n"
         "добро пожаловать в kitty vpn 🐈\n\n"
@@ -489,8 +495,6 @@ async def admin_message_handler(message: Message):
             reply_markup=main_keyboard(),
         )
         return
-
-    if action == "create_p
     if message.from_user.id != ADMIN_ID:
         return
 
