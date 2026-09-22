@@ -20,6 +20,16 @@ from xui import (
 
 dp = Dispatcher()
 
+BOT_VERSION = "1.0.9"
+ADMIN_URL = "https://t.me/kittyvpnoff?direct"
+SUPPORT_URL = "https://t.me/kittyvpn_support_robot"
+CHANNEL = "@kittyvpnoff"
+PRIVACY_URL = "https://telegra.ph/POLITIKA-KONFIDENCIALNOSTI-08-12-99"
+OFFER_URL = "https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15"
+
+admin_action_waiting = {}
+user_action_waiting = {}
+
 
 DEFAULT_SETTINGS = {
     "main_text": "🐈 главное меню",
@@ -50,6 +60,90 @@ CUSTOM_BUTTONS = {
 
 async def get_settings():
     return {key: await get_setting(key, default) for key, default in DEFAULT_SETTINGS.items()}
+
+
+async def main_keyboard():
+    s = await get_settings()
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=s["main_button_subscription"], callback_data="subscription", style="primary")],
+        [InlineKeyboardButton(text=s["main_button_promo"], callback_data="promo")],
+        [InlineKeyboardButton(text=s["main_button_support"], callback_data="support")],
+        [InlineKeyboardButton(text=s["main_button_about"], callback_data="about_service")],
+    ])
+
+
+def subscription_keyboard(s):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=s["subscription_button_copy"], callback_data="copy_subscription", style="primary")],
+        [InlineKeyboardButton(text=s["subscription_button_devices"], callback_data="devices")],
+        [InlineKeyboardButton(text=s["subscription_button_purchase"], callback_data="purchase")],
+        [InlineKeyboardButton(text=s["subscription_button_back"], callback_data="back_to_menu")],
+    ])
+
+
+def customization_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏠 главное меню", callback_data="custom_main")],
+        [InlineKeyboardButton(text="🔗 меню подписки", callback_data="custom_subscription")],
+        [InlineKeyboardButton(text="👀 предпросмотр", callback_data="custom_preview")],
+        [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+    ])
+
+
+def custom_section_keyboard(section):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ текст", callback_data=f"custom_{section}_text")],
+        [InlineKeyboardButton(text="🖼 фото", callback_data=f"custom_{section}_photo")],
+        [InlineKeyboardButton(text="🔘 кнопки", callback_data=f"custom_{section}_buttons")],
+        [InlineKeyboardButton(text="🔙 назад", callback_data="customization")],
+    ])
+
+
+def custom_buttons_keyboard(section):
+    keys = [k for k in CUSTOM_BUTTONS if k.startswith(f"{section}_button_")]
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=CUSTOM_BUTTONS[k], callback_data=f"custom_button:{k}")] for k in keys
+    ] + [[InlineKeyboardButton(text="🔙 назад", callback_data=f"custom_{section}")]])
+
+
+async def render_main_menu(message: Message, replace=False):
+    s = await get_settings()
+    text = s["main_text"]
+    markup = await main_keyboard()
+    photo = s["main_photo"]
+    if photo:
+        if replace:
+            try:
+                await message.delete()
+            except Exception:
+                pass
+        await message.answer_photo(photo=photo, caption=text, reply_markup=markup)
+    elif replace:
+        await message.edit_text(text, reply_markup=markup)
+    else:
+        await message.answer(text, reply_markup=markup)
+
+
+async def render_subscription_menu(message: Message, user, replace=False):
+    s = await get_settings()
+    data = await get_subscription_data(user)
+    if not data:
+        text = "❌ подписка не найдена."
+    else:
+        text = f"{s['subscription_text']}\\n\\n🔗 json-подписка:\\n{data['subscription_url']}\\n\\n⏳ осталось: {format_remaining(data['expires_at'])}"
+    markup = subscription_keyboard(s)
+    photo = s["subscription_photo"]
+    if photo:
+        if replace:
+            try:
+                await message.delete()
+            except Exception:
+                pass
+        await message.answer_photo(photo=photo, caption=text, reply_markup=markup)
+    elif replace:
+        await message.edit_text(text, reply_markup=markup)
+    else:
+        await message.answer(text, reply_markup=markup)
 
 
 async def trial_keyboard():
