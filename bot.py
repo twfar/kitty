@@ -7,7 +7,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import BOT_TOKEN, ADMIN_ID, TRIAL_HOURS
-from db import init_db, get_user, create_user, update_user
+from db import init_db, get_user, create_user, update_user, get_promo, create_promo, use_promo
 from xui import (
     create_client,
     create_paid_client,
@@ -28,6 +28,7 @@ PRIVACY_URL = "https://telegra.ph/POLITIKA-KONFIDENCIALNOSTI-08-12-99"
 OFFER_URL = "https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15"
 
 admin_action_waiting = {}
+user_action_waiting = {}
 
 
 def main_keyboard():
@@ -35,6 +36,7 @@ def main_keyboard():
         [InlineKeyboardButton(text="🔗 подключиться", callback_data="connect")],
         [InlineKeyboardButton(text="📱 устройства", callback_data="devices")],
         [InlineKeyboardButton(text="💳 купить / продлить", callback_data="purchase")],
+        [InlineKeyboardButton(text="🎟 промокод", callback_data="promo")],
         [InlineKeyboardButton(text="🆘 поддержка", callback_data="support")],
         [InlineKeyboardButton(text="ℹ️ о сервисе", callback_data="about_service")],
     ])
@@ -50,6 +52,7 @@ def admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔗 привязать подписку", callback_data="admin_bind_subscription")],
         [InlineKeyboardButton(text="💳 создать оплаченного юзера", callback_data="admin_create_paid")],
+        [InlineKeyboardButton(text="🎟 создать промокод", callback_data="admin_create_promo")],
         [InlineKeyboardButton(text="👤 действия с пользователем", callback_data="admin_user_actions")],
     ])
 
@@ -311,6 +314,37 @@ async def about_service(callback: CallbackQuery):
     )
 
 
+
+@dp.callback_query(lambda c: c.data == "promo")
+async def promo(callback: CallbackQuery):
+    user = await get_user(callback.from_user.id)
+    if not user:
+        await callback.answer("сначала получи trial", show_alert=True)
+        return
+
+    user_action_waiting[callback.from_user.id] = "promo"
+    await callback.answer()
+    await callback.message.answer("🎟 промокод\\n\\nотправь промокод одним сообщением.")
+
+
+@dp.callback_query(lambda c: c.data == "admin_create_promo")
+async def admin_create_promo(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    admin_action_waiting[callback.from_user.id] = "create_promo"
+    await callback.answer()
+    await callback.message.answer(
+        "🎟 создание промокода\\n\\n"
+        "отправь одной строкой:\\n"
+        "`код дни лимит`\\n\\n"
+        "пример:\\n"
+        "`KITTY7 7 10`\\n\\n"
+        "лимит 0 = без ограничений."
+    )
+
+
 @dp.callback_query(lambda c: c.data == "admin_bind_subscription")
 async def admin_bind_subscription(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -378,6 +412,106 @@ async def admin_message_handler(message: Message):
     if not action:
         return
     text = message.text.strip()
+
+    user_action = user_action_waiting.get(message.from_user.id)
+    if user_action == "promo":
+        code = text.upper()
+        promo = await get_promo(code)
+        now = int(time.time())
+
+        if not promo or not promo["enabled"]:
+            await message.answer("❌ промокод не найден или отключён.")
+            return
+
+        if promo["expires_at"] and promo["expires_at"] < now:
+            await message.answer("❌ срок действия промокода истёк.")
+            return
+
+        if promo["max_uses"] > 0 and promo["used_count"] >= promo["max_uses"]:
+            await message.answer("❌ лимит использований промокода исчерпан.")
+            return
+
+        user = await get_user(message.from_user.id)
+        if not user or not user["sub_id"]:
+            await message.answer("❌ подписка не найдена.")
+            user_action_waiting.pop(message.from_user.id, None)
+            return
+
+        try:
+            updated = renew_client_by_sub_id(
+                sub_id=user["sub_id"],
+                days=promo["reward_days"],
+            )
+        except Exception as e:
+            logging.exception("failed to apply promo")
+            await message.answer(f"❌ ошибка применения промокода:\\n`{e}`")
+            return
+
+        if not await use_promo(code, message.from_user.id, now):
+            await message.answer("❌ промокод уже использован тобой или больше недоступен.")
+            return
+
+        expires_at = int(updated.get("expiryTime", 0)) // 1000
+        await update_user(
+            tg_id=user["tg_id"],
+            username=user["username"],
+            email=user["email"],
+            sub_id=user["sub_id"],
+            subscription_url=f"https://87.121.82.175:2096/jsnn/{user['sub_id']}",
+            status=user["status"],
+            created_at=user["created_at"],
+            expires_at=expires_at,
+        )
+
+        user_action_waiting.pop(message.from_user.id, None)
+        await message.answer(
+            f"✅ промокод применён!\\n\\n"
+            f"🎁 начислено: +{promo['reward_days']} дней\\n"
+            f"⏳ осталось: {format_remaining(expires_at)}",
+            reply_markup=main_keyboard(),
+        )
+        return
+
+    if action == "create_promo":
+        parts = text.split()
+
+        if len(parts) != 3:
+            await message.answer("❌ формат: `код дни лимит`")
+            return
+
+        code = parts[0].upper()
+
+        try:
+            reward_days = int(parts[1])
+            max_uses = int(parts[2])
+
+            if not code or reward_days <= 0 or max_uses < 0:
+                raise ValueError
+
+            await create_promo(
+                code=code,
+                reward_days=reward_days,
+                max_uses=max_uses,
+            )
+        except ValueError:
+            await message.answer("❌ дни должны быть больше 0, лимит — 0 или больше.")
+            return
+        except Exception as e:
+            logging.exception("failed to create promo")
+            await message.answer(f"❌ ошибка создания промокода:\\n`{e}`")
+            return
+
+        admin_action_waiting.pop(message.from_user.id, None)
+        limit_text = "без ограничений" if max_uses == 0 else str(max_uses)
+
+        await message.answer(
+            "✅ промокод создан\\n\\n"
+            f"🎟 код: `{code}`\\n"
+            f"🎁 дней: {reward_days}\\n"
+            f"👥 использований: {limit_text}",
+            reply_markup=admin_keyboard(),
+        )
+        return
 
     if action == "bind":
         parts = text.split()
