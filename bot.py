@@ -148,7 +148,7 @@ async def start(message: Message):
         "добро пожаловать в kitty vpn 🐈\n\n"
         f"📢 канал: {CHANNEL}\n\n"
         f"🎁 тестовый доступ на {TRIAL_HOURS} часов.",
-        reply_markup=trial_keyboard(),
+        reply_markup=await trial_keyboard(),
     )
 
 
