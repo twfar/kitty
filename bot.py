@@ -4,7 +4,7 @@ import time
 
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command, CommandStart
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton
 
 from config import BOT_TOKEN, ADMIN_ID, TRIAL_HOURS
 from db import init_db, get_user, create_user, update_user, get_promo, create_promo, use_promo
@@ -33,12 +33,24 @@ user_action_waiting = {}
 
 def main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔗 подключиться", callback_data="connect")],
-        [InlineKeyboardButton(text="📱 устройства", callback_data="devices")],
-        [InlineKeyboardButton(text="💳 купить / продлить", callback_data="purchase")],
+        [InlineKeyboardButton(text="🔗 подписка", callback_data="subscription")],
         [InlineKeyboardButton(text="🎟 промокод", callback_data="promo")],
         [InlineKeyboardButton(text="🆘 поддержка", callback_data="support")],
         [InlineKeyboardButton(text="ℹ️ о сервисе", callback_data="about_service")],
+    ])
+
+
+def subscription_keyboard(subscription_url: str):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="📋 скопировать ссылку",
+            copy_text=CopyTextButton(text=subscription_url),
+        )],
+        [
+            InlineKeyboardButton(text="📱 устройства", callback_data="devices"),
+            InlineKeyboardButton(text="💳 купить / продлить", callback_data="purchase"),
+        ],
+        [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
     ])
 
 
@@ -116,21 +128,32 @@ async def send_subscription_info(message: Message, user):
             ]),
         )
         return
+
     client = data["client"]
     limit = client.get("limitHwid", 0)
+
     try:
         used = len(get_hwid_devices(user["email"]))
     except Exception:
         used = 0
+
     await message.answer(
-        "📊 твоя подписка\n\n"
-        f"📌 статус: {user['status']}\n"
-        f"⏳ осталось: {format_remaining(data['expires_at'])}\n"
-        f"📱 устройства: {used} / {limit}\n\n"
-        "🔗 json-подписка:\n"
-        f"{data['subscription_url']}",
-        reply_markup=main_keyboard(),
+        "🔗 твоя подписка\n\n"
+        f"{data['subscription_url']}\n\n"
+        "📱 устройства: "
+        f"{used} / {limit}\n"
+        f"⏳ осталось: {format_remaining(data['expires_at'])}\n\n"
+        "📲 как подключить в happ:\n"
+        "1. нажми «скопировать ссылку» ниже\n"
+        "2. открой happ и нажми «+»\n"
+        "3. выбери добавление подписки / импорт из буфера\n"
+        "4. вставь ссылку и сохрани\n"
+        "5. выбери сервер и подключись",
+        reply_markup=subscription_keyboard(data["subscription_url"]),
     )
+
+
+
 
 
 @dp.message(CommandStart())
@@ -211,8 +234,8 @@ async def start_trial(callback: CallbackQuery):
     )
 
 
-@dp.callback_query(lambda c: c.data == "connect")
-async def connect(callback: CallbackQuery):
+@dp.callback_query(lambda c: c.data == "subscription")
+async def subscription(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
     if not user:
         await callback.answer("сначала получи trial", show_alert=True)
@@ -271,12 +294,11 @@ async def delete_all_hwid(callback: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
-    user = await get_user(callback.from_user.id)
-    if not user:
-        await callback.answer()
-        return
     await callback.answer()
-    await send_subscription_info(callback.message, user)
+    await callback.message.answer(
+        "🐈 главное меню",
+        reply_markup=main_keyboard(),
+    )
 
 
 @dp.callback_query(lambda c: c.data == "purchase")
@@ -324,7 +346,7 @@ async def promo(callback: CallbackQuery):
 
     user_action_waiting[callback.from_user.id] = "promo"
     await callback.answer()
-    await callback.message.answer("🎟 промокод\\n\\nотправь промокод одним сообщением.")
+    await callback.message.answer("🎟 промокод\n\nотправь промокод одним сообщением.")
 
 
 @dp.callback_query(lambda c: c.data == "admin_create_promo")
@@ -336,11 +358,11 @@ async def admin_create_promo(callback: CallbackQuery):
     admin_action_waiting[callback.from_user.id] = "create_promo"
     await callback.answer()
     await callback.message.answer(
-        "🎟 создание промокода\\n\\n"
-        "отправь одной строкой:\\n"
-        "`код дни лимит`\\n\\n"
-        "пример:\\n"
-        "`KITTY7 7 10`\\n\\n"
+        "🎟 создание промокода\n\n"
+        "отправь одной строкой:\n"
+        "`код дни лимит`\n\n"
+        "пример:\n"
+        "`KITTY7 7 10`\n\n"
         "лимит 0 = без ограничений."
     )
 
@@ -441,7 +463,7 @@ async def admin_message_handler(message: Message):
             )
         except Exception as e:
             logging.exception("failed to apply promo")
-            await message.answer(f"❌ ошибка применения промокода:\\n`{e}`")
+            await message.answer(f"❌ ошибка применения промокода:\n`{e}`")
             return
 
         if not await use_promo(code, message.from_user.id, now):
@@ -462,8 +484,8 @@ async def admin_message_handler(message: Message):
 
         user_action_waiting.pop(message.from_user.id, None)
         await message.answer(
-            f"✅ промокод применён!\\n\\n"
-            f"🎁 начислено: +{promo['reward_days']} дней\\n"
+            f"✅ промокод применён!\n\n"
+            f"🎁 начислено: +{promo['reward_days']} дней\n"
             f"⏳ осталось: {format_remaining(expires_at)}",
             reply_markup=main_keyboard(),
         )
@@ -503,16 +525,16 @@ async def admin_message_handler(message: Message):
             return
         except Exception as e:
             logging.exception("failed to create promo")
-            await message.answer(f"❌ ошибка создания промокода:\\n`{e}`")
+            await message.answer(f"❌ ошибка создания промокода:\n`{e}`")
             return
 
         admin_action_waiting.pop(message.from_user.id, None)
         limit_text = "без ограничений" if max_uses == 0 else str(max_uses)
 
         await message.answer(
-            "✅ промокод создан\\n\\n"
-            f"🎟 код: `{code}`\\n"
-            f"🎁 дней: {reward_days}\\n"
+            "✅ промокод создан\n\n"
+            f"🎟 код: `{code}`\n"
+            f"🎁 дней: {reward_days}\n"
             f"👥 использований: {limit_text}",
             reply_markup=admin_keyboard(),
         )
