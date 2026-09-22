@@ -34,7 +34,7 @@ user_action_waiting = {}
 
 def main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔗 подписка", callback_data="subscription")],
+        [InlineKeyboardButton(text="🔗 подписка", callback_data="subscription", style="primary")],
         [InlineKeyboardButton(text="🎟 промокод", callback_data="promo")],
         [InlineKeyboardButton(text="🆘 поддержка", callback_data="support")],
         [InlineKeyboardButton(text="ℹ️ о сервисе", callback_data="about_service")],
@@ -46,6 +46,7 @@ def subscription_keyboard(subscription_url: str):
         [InlineKeyboardButton(
             text="📋 скопировать ссылку",
             copy_text=CopyTextButton(text=subscription_url),
+            style="primary",
         )],
         [
             InlineKeyboardButton(text="📱 устройства", callback_data="devices"),
@@ -57,14 +58,14 @@ def subscription_keyboard(subscription_url: str):
 
 def trial_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 начать trial", callback_data="start_trial")],
+        [InlineKeyboardButton(text="🎁 начать trial", callback_data="start_trial", style="primary")],
         [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")]
     ])
 
 
 def admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔗 привязать подписку", callback_data="admin_bind_subscription")],
+        [InlineKeyboardButton(text="🔗 привязать подписку", callback_data="admin_bind_subscription", style="primary")],
         [InlineKeyboardButton(text="🔄 продлить подписку", callback_data="admin_renew")],
         [InlineKeyboardButton(text="🎟 создать промокод", callback_data="admin_create_promo")],
         [InlineKeyboardButton(text="👤 действия с пользователем", callback_data="admin_user_actions")],
@@ -73,7 +74,7 @@ def admin_keyboard():
 
 def admin_user_actions_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 продлить на 30 дней", callback_data="admin_renew")],
+        [InlineKeyboardButton(text="🔄 продлить на 30 дней", callback_data="admin_renew", style="primary")],
         [InlineKeyboardButton(text="⛔ забанить", callback_data="admin_ban")],
         [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
     ])
@@ -126,7 +127,7 @@ async def send_subscription_info(message: Message, user):
         await message.edit_text(
             "твоя подписка не найдена в системе.\n\nесли это ошибка, напиши в поддержку:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL)],
+                [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL, style="primary")],
                 [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
             ]),
         )
@@ -278,7 +279,7 @@ async def devices(callback: CallbackQuery):
         "📱 устройства\n\n"
         f"используется: {len(device_list)} / {limit}\n\n{text}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🗑 удалить все устройства", callback_data="delete_all_hwid")],
+            [InlineKeyboardButton(text="🗑 удалить все устройства", callback_data="delete_all_hwid", style="primary")],
             [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
         ]),
     )
@@ -328,7 +329,7 @@ async def purchase(callback: CallbackQuery):
     await callback.message.edit_text(
         "💳 подписка\n\n3 устройства — 80 ₽ / месяц.\n\nдля покупки или продления напиши админу:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💬 написать админу", url=ADMIN_URL)],
+            [InlineKeyboardButton(text="💬 написать админу", url=ADMIN_URL, style="primary")],
             [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
         ]),
     )
@@ -352,7 +353,7 @@ async def about_service(callback: CallbackQuery):
     await callback.message.edit_text(
         "ℹ️ о сервисе\n\nознакомиться с документами сервиса:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔒 политика конфиденциальности", url=PRIVACY_URL)],
+            [InlineKeyboardButton(text="🔒 политика конфиденциальности", url=PRIVACY_URL, style="primary")],
             [InlineKeyboardButton(text="📄 пользовательское соглашение", url=OFFER_URL)],
             [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
         ]),
