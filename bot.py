@@ -163,13 +163,16 @@ async def start(message: Message):
     username = f"@{message.from_user.username}" if message.from_user.username else "—"
     sub_id = user["sub_id"] if user else "—"
     if message.from_user.id != ADMIN_ID:
-        await message.bot.send_message(
-            ADMIN_ID,
-            "🚀 новый /start\n\n"
-            f"👤 username: {username}\n"
-            f"🆔 telegram id: `{message.from_user.id}`\n"
-            f"🔗 sub id: `{sub_id}`",
-        )
+        try:
+            await message.bot.send_message(
+                ADMIN_ID,
+                "🚀 новый /start\n\n"
+                f"👤 username: {username}\n"
+                f"🆔 telegram id: `{message.from_user.id}`\n"
+                f"🔗 sub id: `{sub_id}`",
+            )
+        except Exception:
+            logging.exception("failed to notify admin about /start")
 
     if user:
         await message.answer(
