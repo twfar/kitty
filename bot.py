@@ -139,7 +139,6 @@ async def send_subscription_info(message: Message, user):
 
     await message.answer(
         "🔗 твоя подписка\n\n"
-        f"{data['subscription_url']}\n\n"
         "📱 устройства: "
         f"{used} / {limit}\n"
         f"⏳ осталось: {format_remaining(data['expires_at'])}\n\n"
