@@ -7,7 +7,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import BOT_TOKEN, ADMIN_ID, TRIAL_HOURS
-from db_beta import init_db_beta, get_promo, create_promo, use_promo, create_referral
+from db import init_db, get_promo, create_promo, use_promo, create_referral
 from db import init_db, get_user, create_user, update_user
 from xui import (
     create_client,
@@ -508,7 +508,6 @@ async def admin_message_handler(message: Message):
 async def main():
     logging.basicConfig(level=logging.INFO)
     await init_db()
-    await init_db_beta()
     bot = Bot(token=BOT_TOKEN)
     try:
         await dp.start_polling(bot)
