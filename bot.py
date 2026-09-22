@@ -428,7 +428,11 @@ async def admin_renew(callback: CallbackQuery):
     admin_action_waiting[callback.from_user.id] = "renew"
     await callback.answer()
     await callback.message.edit_text(
-        "🔄 продление\n\nотправь sub_id пользователя.",
+        "🔄 продление\n\n"
+        "отправь одной строкой:\n"
+        "`sub_id дни`\n\n"
+        "например:\n"
+        "`99e9195c-75ce-4fa8-b313-a2eb3ebf7940 30`",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 назад", callback_data="admin_user_actions")]
         ]),
@@ -601,12 +605,26 @@ async def admin_message_handler(message: Message):
         return
 
     if action == "renew":
-        sub_id = text
+        parts = text.split()
+        if len(parts) != 2:
+            await message.answer("❌ формат: `sub_id дни`")
+            return
+
+        sub_id = parts[0]
+        try:
+            days = int(parts[1])
+            if days <= 0:
+                raise ValueError
+        except ValueError:
+            await message.answer("❌ количество дней должно быть целым числом больше 0.")
+            return
+
         if not find_client_by_sub_id(sub_id):
             await message.answer("❌ подписка с таким sub_id не найдена.")
             return
+
         try:
-            updated = renew_client_by_sub_id(sub_id=sub_id, days=30)
+            updated = renew_client_by_sub_id(sub_id=sub_id, days=days)
         except Exception as e:
             logging.exception("failed to renew client")
             await message.answer(f"❌ ошибка продления:\n`{e}`")
@@ -624,7 +642,7 @@ async def admin_message_handler(message: Message):
                 except (TypeError, ValueError):
                     pass
         admin_action_waiting.pop(message.from_user.id, None)
-        await message.answer("✅ подписка продлена на 30 дней\n\n" f"🔗 sub_id: `{sub_id}`\n" f"⏳ осталось: {format_remaining(expires_at)}", reply_markup=admin_keyboard())
+        await message.answer("✅ подписка продлена\n\n" f"🔗 sub_id: `{sub_id}`\n" f"🎁 добавлено: {days} дней\n" f"⏳ осталось: {format_remaining(expires_at)}", reply_markup=admin_keyboard())
         return
 
     if action == "ban":
