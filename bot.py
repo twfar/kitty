@@ -56,7 +56,8 @@ def subscription_keyboard(subscription_url: str):
 
 def trial_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 начать trial", callback_data="start_trial")]
+        [InlineKeyboardButton(text="🎁 начать trial", callback_data="start_trial")],
+        [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")]
     ])
 
 
@@ -386,7 +387,10 @@ async def admin_create_promo(callback: CallbackQuery):
         "`код дни лимит`\n\n"
         "пример:\n"
         "`KITTY7 7 10`\n\n"
-        "лимит 0 = без ограничений."
+        "лимит 0 = без ограничений.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
+        ]),
     )
 
 
