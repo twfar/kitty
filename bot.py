@@ -256,11 +256,11 @@ async def delete_all_hwid(callback: CallbackQuery):
         delete_all_hwid_devices(user["email"])
     except Exception:
         logging.exception("failed to delete hwids")
-        await callback.message.edit_text("❌ не удалось удалить устройства.", reply_markup=main_keyboard())
+        await callback.message.edit_text("❌ не удалось удалить устройства.", reply_markup=await main_keyboard())
         return
     await callback.message.edit_text(
         "✅ все зарегистрированные устройства удалены.\n\nтеперь можно подключить устройство заново.",
-        reply_markup=main_keyboard(),
+        reply_markup=await main_keyboard(),
     )
 
 
@@ -665,7 +665,7 @@ async def admin_message_handler(message: Message):
             f"✅ промокод применён!\n\n"
             f"🎁 начислено: +{promo['reward_days']} дней\n"
             f"⏳ осталось: {format_remaining(expires_at)}",
-            reply_markup=main_keyboard(),
+            reply_markup=await main_keyboard(),
         )
         return
     if message.from_user.id != ADMIN_ID:
