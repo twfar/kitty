@@ -20,6 +20,8 @@ from xui import (
 
 dp = Dispatcher()
 
+BOT_VERSION = "1.0.8"
+
 ADMIN_URL = "https://t.me/kittyvpnoff?direct"
 SUPPORT_URL = "https://t.me/kittyvpn_support_robot"
 CHANNEL = "@kittyvpnoff"
