@@ -10,7 +10,6 @@ from config import BOT_TOKEN, ADMIN_ID, TRIAL_HOURS
 from db import init_db, get_user, create_user, update_user, get_promo, create_promo, use_promo
 from xui import (
     create_client,
-    create_paid_client,
     renew_client_by_sub_id,
     ban_client_by_sub_id,
     find_client,
@@ -64,7 +63,7 @@ def trial_keyboard():
 def admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔗 привязать подписку", callback_data="admin_bind_subscription")],
-        [InlineKeyboardButton(text="💳 создать оплаченного юзера", callback_data="admin_create_paid")],
+        [InlineKeyboardButton(text="🔄 продлить подписку", callback_data="admin_renew")],
         [InlineKeyboardButton(text="🎟 создать промокод", callback_data="admin_create_promo")],
         [InlineKeyboardButton(text="👤 действия с пользователем", callback_data="admin_user_actions")],
     ])
@@ -412,21 +411,6 @@ async def admin_bind_subscription(callback: CallbackQuery):
     )
 
 
-@dp.callback_query(lambda c: c.data == "admin_create_paid")
-async def admin_create_paid(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    admin_action_waiting[callback.from_user.id] = "create_paid"
-    await callback.answer()
-    await callback.message.edit_text(
-        "💳 создание оплаченного пользователя\n\nотправь telegram id пользователя.\n\nпример:\n`6682540155`",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
-        ]),
-    )
-
-
 @dp.callback_query(lambda c: c.data == "admin_user_actions")
 async def admin_user_actions(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -614,31 +598,6 @@ async def admin_message_handler(message: Message):
             await create_user(**values)
         admin_action_waiting.pop(message.from_user.id, None)
         await message.answer("✅ подписка привязана\n\n" f"👤 telegram id: `{tg_id}`\n" f"📧 email: `{email}`\n" f"🔗 sub_id: `{sub_id}`\n" f"⏳ осталось: {format_remaining(expires_at)}", reply_markup=admin_keyboard())
-        return
-
-    if action == "create_paid":
-        try:
-            tg_id = int(text)
-        except ValueError:
-            await message.answer("❌ telegram id должен быть числом.")
-            return
-        if await get_user(tg_id):
-            await message.answer("❌ этот telegram id уже есть в базе.")
-            return
-        email = f"tg_{tg_id}"
-        if find_client(email):
-            await message.answer("❌ клиент с таким telegram id уже существует в 3x-ui.")
-            return
-        try:
-            client = create_paid_client(tg_id=tg_id, days=30)
-        except Exception as e:
-            logging.exception("failed to create paid client")
-            await message.answer(f"❌ ошибка создания пользователя:\n`{e}`")
-            return
-        expires_at = client["expiry_time"] // 1000
-        await create_user(tg_id=tg_id, username="unknown", email=client["email"], sub_id=client["sub_id"], subscription_url=client["subscription_url"], status="paid", created_at=int(time.time()), expires_at=expires_at)
-        admin_action_waiting.pop(message.from_user.id, None)
-        await message.answer("✅ оплаченный пользователь создан\n\n" f"👤 telegram id: `{tg_id}`\n" f"📧 email: `{client['email']}`\n" f"🔗 sub_id: `{client['sub_id']}`\n" f"📱 устройств: 3\n" f"⏳ срок: 30 дней\n\n" "🔗 json-подписка:\n" f"{client['subscription_url']}", reply_markup=admin_keyboard())
         return
 
     if action == "renew":
