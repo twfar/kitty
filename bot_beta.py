@@ -133,7 +133,6 @@ async def send_subscription_info(message: Message, user):
     )
 
 
-@dp.message(CommandStart())
 def make_referral_link(bot_username: str, tg_id: int) -> str:
     return f"https://t.me/{bot_username}?start={REFERRAL_PREFIX}{tg_id}"
 
@@ -147,6 +146,7 @@ def parse_referral(payload: str | None):
         return None
 
 
+@dp.message(CommandStart())
 async def start(message: Message):
 
     user = await get_user(message.from_user.id)
@@ -154,6 +154,7 @@ async def start(message: Message):
     referrer_id = parse_referral(start_args)
     if not user and referrer_id and referrer_id != message.from_user.id:
         await create_referral(referrer_id, message.from_user.id, int(time.time()))
+        await set_referred_by(message.from_user.id, referrer_id)
     username = f"@{message.from_user.username}" if message.from_user.username else "—"
     sub_id = user["sub_id"] if user else "—"
     await message.bot.send_message(
