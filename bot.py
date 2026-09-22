@@ -1129,4 +1129,585 @@ async def main():
 
 
 if __name__ == "__main__":
+    asyncio.run(main())@dp.callback_query(
+    lambda callback: callback.data == "about_service"
+)
+async def about_service(callback: CallbackQuery):
+    await callback.answer()
+
+    await callback.message.answer(
+        "ℹ️ о сервисе",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔒 политика конфиденциальности",
+                        url=PRIVACY_URL,
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="📜 пользовательское соглашение",
+                        url=OFFER_URL,
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🔙 назад",
+                        callback_data="back_to_menu",
+                    )
+                ],
+            ]
+        ),
+    )
+
+
+@dp.callback_query(
+    lambda callback: callback.data == "admin_bind_subscription"
+)
+async def admin_bind_subscription(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer(
+            "доступ запрещён",
+            show_alert=True,
+        )
+        return
+
+    admin_action_waiting[callback.from_user.id] = "bind"
+
+    await callback.answer()
+
+    await callback.message.answer(
+        "🔗 привязка подписки\n\n"
+        "отправь одной строкой:\n"
+        "`telegram_id sub_id`\n\n"
+        "пример:\n"
+        "`6682540155 "
+        "99e9195c-75ce-4fa8-b313-a2eb3ebf7940`"
+    )
+
+
+@dp.callback_query(
+    lambda callback: callback.data == "admin_create_paid"
+)
+async def admin_create_paid(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer(
+            "доступ запрещён",
+            show_alert=True,
+        )
+        return
+
+    admin_action_waiting[callback.from_user.id] = "create_paid"
+
+    await callback.answer()
+
+    await callback.message.answer(
+        "💳 создание оплаченного пользователя\n\n"
+        "отправь telegram id пользователя.\n\n"
+        "пример:\n"
+        "`6682540155`"
+    )
+
+
+@dp.callback_query(
+    lambda callback: callback.data == "admin_user_actions"
+)
+async def admin_user_actions(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer(
+            "доступ запрещён",
+            show_alert=True,
+        )
+        return
+
+    await callback.answer()
+
+    await callback.message.answer(
+        "👤 действия с пользователем\n\n"
+        "выбери действие:",
+        reply_markup=admin_user_actions_keyboard(),
+    )
+
+
+@dp.callback_query(
+    lambda callback: callback.data == "admin_renew"
+)
+async def admin_renew(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer(
+            "доступ запрещён",
+            show_alert=True,
+        )
+        return
+
+    admin_action_waiting[callback.from_user.id] = "renew"
+
+    await callback.answer()
+
+    await callback.message.answer(
+        "🔄 продление\n\n"
+        "отправь sub_id пользователя.\n\n"
+        "пример:\n"
+        "`99e9195c-75ce-4fa8-b313-a2eb3ebf7940`"
+    )
+
+
+@dp.callback_query(
+    lambda callback: callback.data == "admin_ban"
+)
+async def admin_ban(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer(
+            "доступ запрещён",
+            show_alert=True,
+        )
+        return
+
+    admin_action_waiting[callback.from_user.id] = "ban"
+
+    await callback.answer()
+
+    await callback.message.answer(
+        "⛔ бан пользователя\n\n"
+        "отправь sub_id пользователя.\n\n"
+        "пример:\n"
+        "`99e9195c-75ce-4fa8-b313-a2eb3ebf7940`"
+    )
+
+
+@dp.callback_query(
+    lambda callback: callback.data == "admin_back"
+)
+async def admin_back(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer(
+            "доступ запрещён",
+            show_alert=True,
+        )
+        return
+
+    admin_action_waiting.pop(
+        callback.from_user.id,
+        None,
+    )
+
+    await callback.answer()
+
+    await callback.message.answer(
+        "⚙️ админ-панель\n\n"
+        "выбери действие:",
+        reply_markup=admin_keyboard(),
+    )
+
+
+@dp.message()
+async def admin_message_handler(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    action = admin_action_waiting.get(
+        message.from_user.id
+    )
+
+    if not action:
+        return
+
+    if not message.text:
+        return
+
+    text = message.text.strip()
+
+    if action == "bind":
+        parts = text.split()
+
+        if len(parts) != 2:
+            await message.answer(
+                "❌ формат неправильный.\n\n"
+                "нужно:\n"
+                "`telegram_id sub_id`"
+            )
+            return
+
+        try:
+            tg_id = int(parts[0])
+        except ValueError:
+            await message.answer(
+                "❌ telegram id должен быть числом."
+            )
+            return
+
+        sub_id = parts[1]
+
+        client = find_client_by_sub_id(sub_id)
+
+        if not client:
+            await message.answer(
+                "❌ подписка с таким sub_id "
+                "не найдена в 3x-ui."
+            )
+            return
+
+        email = client.get("email")
+
+        if not email:
+            await message.answer(
+                "❌ у подписки отсутствует email."
+            )
+            return
+
+        expires_at = (
+            int(client.get("expiryTime", 0))
+            // 1000
+        )
+
+        subscription_url = (
+            f"https://87.121.82.175:2096/jsnn/{sub_id}"
+        )
+
+        existing_user = await get_user(tg_id)
+
+        if existing_user:
+            await update_user(
+                tg_id=tg_id,
+                username=existing_user["username"],
+                email=email,
+                sub_id=sub_id,
+                subscription_url=subscription_url,
+                status="paid",
+                created_at=existing_user["created_at"],
+                expires_at=expires_at,
+            )
+        else:
+            await create_user(
+                tg_id=tg_id,
+                username="unknown",
+                email=email,
+                sub_id=sub_id,
+                subscription_url=subscription_url,
+                status="paid",
+                created_at=int(time.time()),
+                expires_at=expires_at,
+            )
+
+        admin_action_waiting.pop(
+            message.from_user.id,
+            None,
+        )
+
+        await message.answer(
+            "✅ подписка привязана\n\n"
+            f"👤 telegram id: `{tg_id}`\n"
+            f"📧 email: `{email}`\n"
+            f"🔗 sub_id: `{sub_id}`\n"
+            f"⏳ осталось: {format_remaining(expires_at)}",
+            reply_markup=admin_keyboard(),
+        )
+
+        return
+
+    if action == "create_paid":
+        try:
+            tg_id = int(text)
+        except ValueError:
+            await message.answer(
+                "❌ telegram id должен быть числом."
+            )
+            return
+
+        existing_user = await get_user(tg_id)
+
+        if existing_user:
+            await message.answer(
+                "❌ этот telegram id уже есть "
+                "в базе."
+            )
+            return
+
+        email = f"tg_{tg_id}"
+
+        existing_client = find_client(email)
+
+        if existing_client:
+            await message.answer(
+                "❌ клиент с таким telegram id "
+                "уже существует в 3x-ui."
+            )
+            return
+
+        try:
+            client = create_paid_client(
+                tg_id=tg_id,
+                days=30,
+            )
+        except Exception as e:
+            logging.exception(
+                "failed to create paid client"
+            )
+
+            await message.answer(
+                f"❌ ошибка создания пользователя:\n"
+                f"`{e}`"
+            )
+            return
+
+        created_at = int(time.time())
+        expires_at = (
+            client["expiry_time"] // 1000
+        )
+
+        subscription_url = client[
+            "subscription_url"
+        ]
+
+        await create_user(
+            tg_id=tg_id,
+            username="unknown",
+            email=client["email"],
+            sub_id=client["sub_id"],
+            subscription_url=subscription_url,
+            status="paid",
+            created_at=created_at,
+            expires_at=expires_at,
+        )
+
+        admin_action_waiting.pop(
+            message.from_user.id,
+            None,
+        )
+
+        await message.answer(
+            "✅ оплаченный пользователь создан\n\n"
+            f"👤 telegram id: `{tg_id}`\n"
+            f"📧 email: `{client['email']}`\n"
+            f"🔗 sub_id: `{client['sub_id']}`\n"
+            f"📱 устройств: 3\n"
+            f"⏳ срок: 30 дней\n\n"
+            "🔗 json-подписка:\n"
+            f"{subscription_url}",
+            reply_markup=admin_keyboard(),
+        )
+
+        return
+
+    if action == "renew":
+        sub_id = text
+
+        client = find_client_by_sub_id(sub_id)
+
+        if not client:
+            await message.answer(
+                "❌ подписка с таким sub_id "
+                "не найдена."
+            )
+            return
+
+        try:
+            updated_client = renew_client_by_sub_id(
+                sub_id=sub_id,
+                days=30,
+            )
+        except Exception as e:
+            logging.exception(
+                "failed to renew client"
+            )
+
+            await message.answer(
+                f"❌ ошибка продления:\n"
+                f"`{e}`"
+            )
+            return
+
+        expires_at = (
+            int(updated_client.get("expiryTime", 0))
+            // 1000
+        )
+
+        email = updated_client.get("email")
+
+        if email:
+            tg_id_value = None
+
+            inbounds = get_inbounds()
+
+            for inbound in inbounds:
+                settings = inbound.get(
+                    "settings",
+                    {},
+                )
+
+                for xui_client in settings.get(
+                    "clients",
+                    [],
+                ):
+                    if xui_client.get(
+                        "email"
+                    ) == email:
+                        tg_id_value = xui_client.get(
+                            "tgId"
+                        )
+                        break
+
+                if tg_id_value:
+                    break
+
+            if tg_id_value:
+                try:
+                    for_tg = int(tg_id_value)
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+                    for_tg = None
+
+                if for_tg:
+                    user = await get_user(for_tg)
+
+                    if user:
+                        await update_user(
+                            tg_id=for_tg,
+                            username=user["username"],
+                            email=email,
+                            sub_id=sub_id,
+                            subscription_url=(
+                                f"https://87.121.82.175:2096/"
+                                f"jsnn/{sub_id}"
+                            ),
+                            status="paid",
+                            created_at=user[
+                                "created_at"
+                            ],
+                            expires_at=expires_at,
+                        )
+
+        admin_action_waiting.pop(
+            message.from_user.id,
+            None,
+        )
+
+        await message.answer(
+            "✅ подписка продлена на 30 дней\n\n"
+            f"🔗 sub_id: `{sub_id}`\n"
+            f"⏳ осталось: "
+            f"{format_remaining(expires_at)}",
+            reply_markup=admin_keyboard(),
+        )
+
+        return
+
+    if action == "ban":
+        sub_id = text
+
+        client = find_client_by_sub_id(sub_id)
+
+        if not client:
+            await message.answer(
+                "❌ подписка с таким sub_id "
+                "не найдена."
+            )
+            return
+
+        try:
+            ban_client_by_sub_id(
+                sub_id=sub_id,
+            )
+        except Exception as e:
+            logging.exception(
+                "failed to ban client"
+            )
+
+            await message.answer(
+                f"❌ ошибка бана:\n"
+                f"`{e}`"
+            )
+            return
+
+        email = client.get("email")
+
+        if email:
+            inbounds = get_inbounds()
+
+            tg_id_value = None
+
+            for inbound in inbounds:
+                settings = inbound.get(
+                    "settings",
+                    {},
+                )
+
+                for xui_client in settings.get(
+                    "clients",
+                    [],
+                ):
+                    if xui_client.get(
+                        "email"
+                    ) == email:
+                        tg_id_value = xui_client.get(
+                            "tgId"
+                        )
+                        break
+
+                if tg_id_value:
+                    break
+
+            if tg_id_value:
+                try:
+                    tg_id = int(tg_id_value)
+                    user = await get_user(tg_id)
+
+                    if user:
+                        await update_user(
+                            tg_id=tg_id,
+                            username=user["username"],
+                            email=user["email"],
+                            sub_id=user["sub_id"],
+                            subscription_url=user[
+                                "subscription_url"
+                            ],
+                            status="banned",
+                            created_at=user[
+                                "created_at"
+                            ],
+                            expires_at=user[
+                                "expires_at"
+                            ],
+                        )
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+                    pass
+
+        admin_action_waiting.pop(
+            message.from_user.id,
+            None,
+        )
+
+        await message.answer(
+            "⛔ пользователь забанен\n\n"
+            f"🔗 sub_id: `{sub_id}`",
+            reply_markup=admin_keyboard(),
+        )
+
+        return
+
+
+async def main():
+    logging.basicConfig(
+        level=logging.INFO
+    )
+
+    await init_db()
+
+    bot = Bot(
+        token=BOT_TOKEN
+    )
+
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
+
+
+if __name__ == "__main__":
     asyncio.run(main())
