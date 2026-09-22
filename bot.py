@@ -406,10 +406,7 @@ async def admin_back(callback: CallbackQuery):
 
 @dp.message()
 async def admin_message_handler(message: Message):
-    if message.from_user.id != ADMIN_ID or not message.text:
-        return
-    action = admin_action_waiting.get(message.from_user.id)
-    if not action:
+    if not message.text:
         return
     text = message.text.strip()
 
@@ -470,6 +467,14 @@ async def admin_message_handler(message: Message):
             f"⏳ осталось: {format_remaining(expires_at)}",
             reply_markup=main_keyboard(),
         )
+        return
+
+    if action == "create_p
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    action = admin_action_waiting.get(message.from_user.id)
+    if not action:
         return
 
     if action == "create_promo":
