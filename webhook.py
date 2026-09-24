@@ -11,7 +11,6 @@ from config import BOT_TOKEN, ADMIN_ID, ROLLYPAY_SIGNING_SECRET
 from db import (
     get_payment,
     update_payment_status,
-    payment_paid_once,
     get_user,
     update_user,
 )
@@ -69,7 +68,7 @@ async def webhook(request):
         )
         return web.Response(status=200, text="ignored")
 
-    if bool(event.get("test", False)) != bool(payment["test"]):
+    if "test" in event and bool(event.get("test")) != bool(payment["test"]):
         await notify_admin(
             request.app["bot"],
             f"⚠️ несовпадение test-режима\n\n🆔 payment id: {payment_id}",
@@ -103,9 +102,14 @@ async def webhook(request):
 
     if status != "paid":
         await update_payment_status(payment_id, status)
+        if status in ("canceled", "expired"):
+            try:
+                await request.app["bot"].send_message(payment["tg_id"], "❌ оплата не прошла.\n\nплатёж отменён или истёк. если деньги списались, но подписка не продлилась — напиши в поддержку.")
+            except Exception:
+                logging.exception("failed to notify user about failed payment")
         return web.Response(status=200, text="ok")
 
-    if not await payment_paid_once(payment_id):
+    if payment["status"] == "paid":
         return web.Response(status=200, text="already processed")
 
     user = await get_user(payment["tg_id"])
@@ -138,6 +142,7 @@ async def webhook(request):
         )
     except Exception:
         logging.exception("failed to renew after payment")
+        await update_payment_status(payment_id, "renewal_failed")
         await notify_admin(
             request.app["bot"],
             "❌ оплата получена, но продление не удалось\n\n"
@@ -145,6 +150,8 @@ async def webhook(request):
             f"🔗 sub id: {user['sub_id']}",
         )
         return web.Response(status=500, text="renewal failed")
+
+    await update_payment_status(payment_id, "paid")
 
     await request.app["bot"].send_message(
         payment["tg_id"],
