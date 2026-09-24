@@ -313,13 +313,9 @@ def renew_client_by_sub_id(sub_id, days=30):
         raise RuntimeError("client email not found")
 
     client_data = client.get("client", client)
-    now = int(time.time() * 1000)
-    current_expiry = int(client_data.get("expiryTime") or 0)
 
-    # if the subscription is still active, extend it from its current expiry.
-    # if it has already expired, start the new period from now.
-    base_time = max(now, current_expiry)
-    expiry_time = base_time + (
+    # paid payment = exactly N full days from the moment of payment.
+    expiry_time = int(time.time() * 1000) + (
         days * 24 * 60 * 60 * 1000
     )
 
@@ -358,8 +354,6 @@ def renew_client_by_sub_id(sub_id, days=30):
         raise RuntimeError("client disappeared after renewal")
 
     return updated
-
-
 
 def ban_client_by_sub_id(sub_id):
     client = find_client_by_sub_id(sub_id)
