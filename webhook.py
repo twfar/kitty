@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import logging
+import ssl
 
 from aiohttp import web
 from aiogram import Bot
@@ -176,8 +177,15 @@ if __name__ == "__main__":
     if not ROLLYPAY_SIGNING_SECRET:
         raise RuntimeError("ROLLYPAY_SIGNING_SECRET is not set")
 
+    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    ssl_context.load_cert_chain(
+        "/root/.acme.sh/87.121.82.175_ecc/fullchain.cer",
+        "/root/.acme.sh/87.121.82.175_ecc/87.121.82.175.key",
+    )
+
     web.run_app(
         create_app(),
         host="0.0.0.0",
         port=8443,
+        ssl_context=ssl_context,
     )
