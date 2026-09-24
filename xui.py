@@ -220,7 +220,7 @@ def disable_client(email):
         "totalGB": client_data.get("totalGB", 0),
         "expiryTime": client_data.get("expiryTime", 0),
         "limitIp": client_data.get("limitIp", 0),
-        "limitHwid": client_data.get("limitHwid", 0),
+        "limitHwid": 3,
         "tgId": client_data.get("tgId", 0),
         "reset": client_data.get("reset", 0),
         "resetDay": client_data.get("resetDay", 0),
