@@ -314,7 +314,12 @@ def renew_client_by_sub_id(sub_id, days=30):
 
     client_data = client.get("client", client)
     now = int(time.time() * 1000)
-    expiry_time = now + (
+    current_expiry = int(client_data.get("expiryTime") or 0)
+
+    # if the subscription is still active, extend it from its current expiry.
+    # if it has already expired, start the new period from now.
+    base_time = max(now, current_expiry)
+    expiry_time = base_time + (
         days * 24 * 60 * 60 * 1000
     )
 
@@ -334,14 +339,8 @@ def renew_client_by_sub_id(sub_id, days=30):
         "reset": client_data.get("reset", 0),
         "resetDay": client_data.get("resetDay", 0),
         "resetMax": client_data.get("resetMax", 0),
-        "trafficReset": client_data.get(
-            "trafficReset",
-            "never",
-        ),
-        "trafficResetDay": client_data.get(
-            "trafficResetDay",
-            1,
-        ),
+        "trafficReset": client_data.get("trafficReset", "never"),
+        "trafficResetDay": client_data.get("trafficResetDay", 1),
         "group": client_data.get("group") or "paid",
         "comment": client_data.get("comment") or "",
         "enable": True,
