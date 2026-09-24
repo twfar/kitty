@@ -669,6 +669,39 @@ async def custom_preview_sub(callback: CallbackQuery):
     await render_subscription_menu(callback.message, user, replace=True)
 
 
+@dp.callback_query(lambda c: c.data == "admin_price")
+async def admin_price(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+    current = await get_setting("payment_price", "80")
+    admin_action_waiting[callback.from_user.id] = "payment_price"
+    await callback.answer()
+    await callback.message.edit_text(
+        f"💰 цена подписки\n\nтекущая цена: {current} ₽\n\nотправь новую цену одним числом.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
+        ]),
+    )
+
+
+@dp.callback_query(lambda c: c.data == "admin_test_mode")
+async def admin_test_mode(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+    current = await get_setting("rollypay_test", "1")
+    new_value = "0" if current == "1" else "1"
+    await set_setting("rollypay_test", new_value)
+    await callback.answer(
+        f"тестовый режим {'выключен' if new_value == '0' else 'включён'}"
+    )
+    await callback.message.edit_text(
+        "⚙️ админ-панель\n\nвыбери действие:",
+        reply_markup=admin_keyboard(),
+    )
+
+
 @dp.callback_query(lambda c: c.data == "admin_create_promo")
 async def admin_create_promo(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -854,6 +887,22 @@ async def admin_message_handler(message: Message):
             admin_action_waiting.pop(message.from_user.id, None)
             section = "main" if key.startswith("main_") else "subscription"
             await message.answer("✅ название кнопки сохранено.", reply_markup=custom_buttons_keyboard(section))
+        return
+
+    if action == "payment_price":
+        try:
+            price = int(text)
+            if price <= 0:
+                raise ValueError
+        except ValueError:
+            await message.answer("❌ цена должна быть целым числом больше 0.")
+            return
+        await set_setting("payment_price", str(price))
+        admin_action_waiting.pop(message.from_user.id, None)
+        await message.answer(
+            f"✅ цена подписки изменена: {price} ₽.",
+            reply_markup=admin_keyboard(),
+        )
         return
 
     if action == "create_promo":
