@@ -132,7 +132,7 @@ async def render_subscription_menu(message: Message, user, replace=False):
     if not data:
         text = "❌ подписка не найдена."
     else:
-        text = f"{s['subscription_text']}\\n\\n🔗 json-подписка:\\n{data['subscription_url']}\\n\\n⏳ осталось: {format_remaining(data['expires_at'])}"
+        text = f"{s['subscription_text']}\n\n🔗 json-подписка:\n{data['subscription_url']}\n\n⏳ осталось: {format_remaining(data['expires_at'])}"
     markup = subscription_keyboard(s)
     photo = s["subscription_photo"]
     if photo:
