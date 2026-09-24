@@ -380,11 +380,78 @@ async def back_to_menu(callback: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "purchase")
 async def purchase(callback: CallbackQuery):
+    tg_id = callback.from_user.id
+    user = await get_user(tg_id)
+    if not user or not user["sub_id"]:
+        await callback.answer("сначала получи trial", show_alert=True)
+        return
+
+    try:
+        price = int(await get_setting("payment_price", "80"))
+        days = ROLLYPAY_DEFAULT_DAYS
+    except (TypeError, ValueError):
+        await callback.answer("ошибка настроек оплаты", show_alert=True)
+        return
+
+    username = f"@{callback.from_user.username}" if callback.from_user.username else "—"
+    test_enabled = (await get_setting("rollypay_test", "1")) == "1"
+
+    await callback.bot.send_message(
+        ADMIN_ID,
+        "💳 попытка оплаты\n\n"
+        f"👤 username: {username}\n"
+        f"🆔 telegram id: {tg_id}\n"
+        f"💰 сумма: {price} ₽\n"
+        f"📅 дней: {days}\n"
+        f"🧪 тестовый режим: {'да' if test_enabled else 'нет'}",
+    )
+
+    if not ROLLYPAY_API_KEY:
+        await callback.answer("оплата пока не настроена", show_alert=True)
+        return
+
+    try:
+        payment = await rollypay_create_payment(
+            api_key=ROLLYPAY_API_KEY,
+            amount=price,
+            tg_id=tg_id,
+            days=days,
+            test=test_enabled,
+        )
+        await create_payment(
+            payment_id=payment["payment_id"],
+            order_id=payment["order_id"],
+            tg_id=tg_id,
+            amount=str(price),
+            currency="RUB",
+            days=days,
+            test=test_enabled,
+        )
+    except Exception:
+        logging.exception("failed to create rollypay payment")
+        await callback.bot.send_message(
+            ADMIN_ID,
+            "❌ ошибка создания платежа\n\n"
+            f"👤 telegram id: {tg_id}",
+        )
+        await callback.answer("не удалось создать платёж", show_alert=True)
+        return
+
+    await callback.bot.send_message(
+        ADMIN_ID,
+        "✅ платёж создан\n\n"
+        f"🆔 payment id: {payment['payment_id']}\n"
+        f"📦 order id: {payment['order_id']}\n"
+        f"💰 сумма: {price} ₽\n"
+        f"🔗 {payment['pay_url']}",
+    )
     await callback.answer()
     await callback.message.edit_text(
-        "💳 подписка\n\n3 устройства — 80 ₽ / месяц.\n\nдля покупки или продления напиши админу:",
+        "💳 оплата подписки\n\n"
+        f"3 устройства — {price} ₽ / {days} дней.\n\n"
+        "нажми кнопку ниже и оплати. после успешной оплаты доступ продлится автоматически.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💬 написать админу", url=ADMIN_URL, style="primary")],
+            [InlineKeyboardButton(text="💳 оплатить", url=payment["pay_url"], style="primary")],
             [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
         ]),
     )
