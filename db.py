@@ -55,6 +55,21 @@ async def init_db():
                 "ALTER TABLE users ADD COLUMN subscription_url TEXT"
             )
 
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS payments (
+                payment_id TEXT PRIMARY KEY,
+                order_id TEXT UNIQUE NOT NULL,
+                tg_id INTEGER NOT NULL,
+                amount TEXT NOT NULL,
+                currency TEXT NOT NULL,
+                days INTEGER NOT NULL,
+                test INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER
+            )
+        """)
+
         await db.commit()
 
 
@@ -105,6 +120,8 @@ async def create_user(
         ))
 
         await db.commit()
+
+
 async def update_user(
     tg_id: int,
     username: str,
@@ -227,3 +244,86 @@ async def use_promo(code: str, tg_id: int, used_at: int) -> bool:
 
         await db.commit()
         return True
+
+
+async def create_payment(
+    payment_id,
+    order_id,
+    tg_id,
+    amount,
+    currency,
+    days,
+    test,
+):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            """
+            INSERT OR IGNORE INTO payments (
+                payment_id,
+                order_id,
+                tg_id,
+                amount,
+                currency,
+                days,
+                test,
+                status,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'created', strftime('%s', 'now'))
+            """,
+            (
+                payment_id,
+                order_id,
+                tg_id,
+                amount,
+                currency,
+                days,
+                int(test),
+            ),
+        )
+
+        await db.commit()
+
+
+async def get_payment(payment_id):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+
+        cursor = await db.execute(
+            "SELECT * FROM payments WHERE payment_id = ?",
+            (payment_id,),
+        )
+
+        return await cursor.fetchone()
+
+
+async def update_payment_status(payment_id, status):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            """
+            UPDATE payments
+            SET status = ?, updated_at = strftime('%s', 'now')
+            WHERE payment_id = ?
+            """,
+            (status, payment_id),
+        )
+
+        await db.commit()
+
+
+async def payment_paid_once(payment_id):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            """
+            UPDATE payments
+            SET
+                status = 'paid',
+                updated_at = strftime('%s', 'now')
+            WHERE payment_id = ?
+              AND status != 'paid'
+            """,
+            (payment_id,),
+        )
+
+        await db.commit()
+        return cursor.rowcount == 1
