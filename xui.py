@@ -337,7 +337,7 @@ def renew_client_by_sub_id(sub_id, days=30):
         "resetMax": client_data.get("resetMax", 0),
         "trafficReset": client_data.get("trafficReset", "never"),
         "trafficResetDay": client_data.get("trafficResetDay", 1),
-        "group": client_data.get("group") or "paid",
+        "group": "paid",
         "comment": client_data.get("comment") or "",
         "enable": True,
     }
