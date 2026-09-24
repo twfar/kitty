@@ -359,3 +359,23 @@ def renew_client_by_sub_id(sub_id, days=30):
 
     return updated
 
+
+
+def ban_client_by_sub_id(sub_id):
+    client = find_client_by_sub_id(sub_id)
+
+    if not client:
+        raise RuntimeError("subscription not found")
+
+    email = client.get("email")
+
+    if not email:
+        raise RuntimeError("client email not found")
+
+    _request(
+        "POST",
+        "/panel/api/clients/bulkDisable",
+        {"emails": [email]},
+    )
+
+    return True
