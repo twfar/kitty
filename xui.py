@@ -312,14 +312,45 @@ def renew_client_by_sub_id(sub_id, days=30):
     if not email:
         raise RuntimeError("client email not found")
 
-    result = _request(
+    client_data = client.get("client", client)
+    now = int(time.time() * 1000)
+    expiry_time = now + (
+        days * 24 * 60 * 60 * 1000
+    )
+
+    payload = {
+        "email": client_data.get("email", email),
+        "subId": client_data.get("subId"),
+        "id": client_data.get("uuid") or client_data.get("id"),
+        "password": client_data.get("password"),
+        "auth": client_data.get("auth"),
+        "flow": client_data.get("flow") or "",
+        "security": client_data.get("security") or "auto",
+        "totalGB": client_data.get("totalGB", 0),
+        "expiryTime": expiry_time,
+        "limitIp": client_data.get("limitIp", 0),
+        "limitHwid": client_data.get("limitHwid", 0),
+        "tgId": client_data.get("tgId", 0),
+        "reset": client_data.get("reset", 0),
+        "resetDay": client_data.get("resetDay", 0),
+        "resetMax": client_data.get("resetMax", 0),
+        "trafficReset": client_data.get(
+            "trafficReset",
+            "never",
+        ),
+        "trafficResetDay": client_data.get(
+            "trafficResetDay",
+            1,
+        ),
+        "group": client_data.get("group") or "paid",
+        "comment": client_data.get("comment") or "",
+        "enable": True,
+    }
+
+    _request(
         "POST",
-        "/panel/api/clients/bulkAdjust",
-        {
-            "emails": [email],
-            "addDays": days,
-            "addBytes": 0,
-        },
+        f"/panel/api/clients/update/{quote(email, safe='')}",
+        payload,
     )
 
     updated = find_client(email)
@@ -329,84 +360,3 @@ def renew_client_by_sub_id(sub_id, days=30):
 
     return updated
 
-
-def ban_client_by_sub_id(sub_id):
-    client = find_client_by_sub_id(sub_id)
-
-    if not client:
-        raise RuntimeError("subscription not found")
-
-    email = client.get("email")
-
-    if not email:
-        raise RuntimeError("client email not found")
-
-    _request(
-        "POST",
-        "/panel/api/clients/bulkDisable",
-        {
-            "emails": [email],
-        },
-    )
-
-    return True
-
-
-def create_paid_client(tg_id, days=30):
-    now = int(time.time() * 1000)
-
-    expiry_time = now + (
-        days * 24 * 60 * 60 * 1000
-    )
-
-    email = f"tg_{tg_id}"
-
-    payload = {
-        "client": {
-            "email": email,
-            "enable": True,
-            "expiryTime": expiry_time,
-            "totalGB": 0,
-            "tgId": tg_id,
-            "limitHwid": 3,
-            "limitIp": 0,
-            "reset": 0,
-            "resetDay": 0,
-            "resetMax": 0,
-            "trafficReset": "never",
-            "trafficResetDay": 1,
-            "flow": "xtls-rprx-vision",
-            "security": "auto",
-            "comment": "",
-            "group": "paid",
-        },
-        "inboundIds": INBOUND_IDS,
-    }
-
-    _request(
-        "POST",
-        "/panel/api/clients/add",
-        payload,
-    )
-
-    client = find_client(email)
-
-    if not client:
-        raise RuntimeError("paid client was not created")
-
-    sub_id = client.get("subId")
-
-    if not sub_id:
-        raise RuntimeError("paid client has no subId")
-
-    return {
-        "email": email,
-        "tg_id": tg_id,
-        "sub_id": sub_id,
-        "expiry_time": expiry_time,
-        "subscription_url": get_subscription_url(
-            sub_id,
-            json_mode=True,
-        ),
-        "client": client,
-    }
