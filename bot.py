@@ -6,8 +6,25 @@ from aiogram import Bot, Dispatcher
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton
 
-from config import BOT_TOKEN, ADMIN_ID, TRIAL_HOURS
-from db import init_db, get_user, create_user, update_user, get_promo, create_promo, use_promo
+from config import (
+    BOT_TOKEN,
+    ADMIN_ID,
+    TRIAL_HOURS,
+    ROLLYPAY_API_KEY,
+    ROLLYPAY_DEFAULT_DAYS,
+)
+from db import (
+    init_db,
+    get_user,
+    create_user,
+    update_user,
+    get_promo,
+    create_promo,
+    use_promo,
+    get_setting,
+    set_setting,
+    create_payment,
+)
 from xui import (
     create_client,
     renew_client_by_sub_id,
@@ -17,6 +34,8 @@ from xui import (
     get_hwid_devices,
     delete_all_hwid_devices,
 )
+
+from rollypay import create_payment as rollypay_create_payment
 
 dp = Dispatcher()
 
@@ -67,6 +86,8 @@ def admin_keyboard():
         [InlineKeyboardButton(text="🔗 привязать подписку", callback_data="admin_bind_subscription")],
         [InlineKeyboardButton(text="🔄 продлить подписку", callback_data="admin_renew")],
         [InlineKeyboardButton(text="🎟 создать промокод", callback_data="admin_create_promo")],
+        [InlineKeyboardButton(text="💰 цена подписки", callback_data="admin_price")],
+        [InlineKeyboardButton(text="🧪 тестовый режим", callback_data="admin_test_mode")],
         [InlineKeyboardButton(text="👤 действия с пользователем", callback_data="admin_user_actions")],
     ])
 
@@ -324,11 +345,64 @@ async def back_to_menu(callback: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "purchase")
 async def purchase(callback: CallbackQuery):
-    await callback.answer()
+    user = await get_user(callback.from_user.id)
+
+    if not user or not user["sub_id"]:
+        await callback.answer("сначала получи trial", show_alert=True)
+        return
+
+    await callback.answer("создаю платёж...")
+
+    price = int(await get_setting("payment_price", "80"))
+    days = ROLLYPAY_DEFAULT_DAYS
+    test_mode = bool(int(await get_setting("rollypay_test", "1")))
+
+    if not ROLLYPAY_API_KEY:
+        await callback.message.edit_text(
+            "❌ оплата сейчас недоступна.\n\nнапиши в поддержку.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL)],
+                [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
+            ]),
+        )
+        return
+
+    try:
+        payment = await rollypay_create_payment(
+            api_key=ROLLYPAY_API_KEY,
+            amount=price,
+            tg_id=callback.from_user.id,
+            days=days,
+            test=test_mode,
+        )
+
+        await create_payment(
+            payment_id=payment["payment_id"],
+            order_id=payment["order_id"],
+            tg_id=callback.from_user.id,
+            amount=str(price),
+            currency="RUB",
+            days=days,
+            test=test_mode,
+        )
+    except Exception:
+        logging.exception("failed to create rollypay payment")
+        await callback.message.edit_text(
+            "❌ не удалось создать платёж.\n\nпопробуй ещё раз или напиши в поддержку.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL)],
+                [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
+            ]),
+        )
+        return
+
     await callback.message.edit_text(
-        "💳 подписка\n\n3 устройства — 80 ₽ / месяц.\n\nдля покупки или продления напиши админу:",
+        "💳 оплата подписки\n\n"
+        f"💰 сумма: {price} ₽\n"
+        f"📅 срок: {days} дней\n\n"
+        "после успешной оплаты подписка продлится автоматически.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💬 написать админу", url=ADMIN_URL)],
+            [InlineKeyboardButton(text="💳 оплатить", url=payment["pay_url"])],
             [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
         ]),
     )
@@ -466,6 +540,46 @@ async def admin_back(callback: CallbackQuery):
     await callback.message.edit_text("⚙️ админ-панель\n\nвыбери действие:", reply_markup=admin_keyboard())
 
 
+
+@dp.callback_query(lambda c: c.data == "admin_price")
+async def admin_price(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    current = await get_setting("payment_price", "80")
+    admin_action_waiting[callback.from_user.id] = "payment_price"
+    await callback.answer()
+    await callback.message.edit_text(
+        "💰 цена подписки\n\n"
+        f"текущая цена: {current} ₽\n\n"
+        "отправь новую цену одним числом.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
+        ]),
+    )
+
+
+@dp.callback_query(lambda c: c.data == "admin_test_mode")
+async def admin_test_mode(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    current = bool(int(await get_setting("rollypay_test", "1")))
+    new_value = 0 if current else 1
+    await set_setting("rollypay_test", str(new_value))
+    await callback.answer(
+        "тестовый режим включён" if new_value else "тестовый режим выключен",
+        show_alert=True,
+    )
+    await callback.message.edit_text(
+        "⚙️ админ-панель\n\n"
+        f"🧪 тестовый режим: {'включён' if new_value else 'выключен'}",
+        reply_markup=admin_keyboard(),
+    )
+
+
 @dp.message()
 async def admin_message_handler(message: Message):
     if not message.text:
@@ -535,6 +649,24 @@ async def admin_message_handler(message: Message):
 
     action = admin_action_waiting.get(message.from_user.id)
     if not action:
+        return
+
+    if action == "payment_price":
+        try:
+            price = int(text)
+            if price <= 0:
+                raise ValueError
+        except ValueError:
+            await message.answer("❌ цена должна быть целым числом больше 0.")
+            return
+
+        await set_setting("payment_price", str(price))
+        admin_action_waiting.pop(message.from_user.id, None)
+        await message.answer(
+            "✅ цена изменена\n\n"
+            f"💰 новая цена: {price} ₽",
+            reply_markup=admin_keyboard(),
+        )
         return
 
     if action == "create_promo":
