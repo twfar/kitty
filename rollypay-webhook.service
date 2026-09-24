@@ -1,0 +1,14 @@
+[Unit]
+Description=Kitty VPN RollyPay Webhook
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/vpn-bot
+ExecStart=/opt/vpn-bot/.venv/bin/python /opt/vpn-bot/webhook.py
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target
