@@ -330,7 +330,7 @@ def renew_client_by_sub_id(sub_id, days=30):
         "totalGB": client_data.get("totalGB", 0),
         "expiryTime": expiry_time,
         "limitIp": client_data.get("limitIp", 0),
-        "limitHwid": client_data.get("limitHwid", 0),
+        "limitHwid": 3,
         "tgId": client_data.get("tgId", 0),
         "reset": client_data.get("reset", 0),
         "resetDay": client_data.get("resetDay", 0),
