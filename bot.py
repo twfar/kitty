@@ -6,8 +6,10 @@ from aiogram import Bot, Dispatcher
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton
 
-from config import BOT_TOKEN, ADMIN_ID, TRIAL_HOURS
-from db import init_db, get_user, create_user, update_user, get_promo, create_promo, use_promo, get_setting, set_setting, delete_setting
+from config import BOT_TOKEN, ADMIN_ID, TRIAL_HOURS, ROLLYPAY_API_KEY, ROLLYPAY_DEFAULT_DAYS
+from db import init_db, get_user, create_user, update_user, get_promo, create_promo, use_promo, get_setting, set_setting, delete_setting, create_payment
+from rollypay import create_payment as rollypay_create_payment
+
 from xui import (
     create_client,
     renew_client_by_sub_id,
@@ -20,7 +22,7 @@ from xui import (
 
 dp = Dispatcher()
 
-BOT_VERSION = "1.0.9"
+BOT_VERSION = "1.1.0"
 ADMIN_URL = "https://t.me/kittyvpnoff?direct"
 SUPPORT_URL = "https://t.me/kittyvpn_support_robot"
 CHANNEL = "@kittyvpnoff"
@@ -160,6 +162,8 @@ def admin_keyboard():
         [InlineKeyboardButton(text="🎟 создать промокод", callback_data="admin_create_promo")],
         [InlineKeyboardButton(text="🎨 кастомизация", callback_data="customization")],
         [InlineKeyboardButton(text="👤 действия с пользователем", callback_data="admin_user_actions")],
+        [InlineKeyboardButton(text="💰 цена подписки", callback_data="admin_price")],
+        [InlineKeyboardButton(text="🧪 тестовый режим", callback_data="admin_test_mode")],
     ])
 
 
