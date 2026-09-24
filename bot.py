@@ -6,10 +6,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton
 
-from config import BOT_TOKEN, ADMIN_ID, TRIAL_HOURS, ROLLYPAY_API_KEY, ROLLYPAY_DEFAULT_DAYS
-from db import init_db, get_user, create_user, update_user, get_promo, create_promo, use_promo, get_setting, set_setting, delete_setting, create_payment
-from rollypay import create_payment as rollypay_create_payment
-
+from config import BOT_TOKEN, ADMIN_ID, TRIAL_HOURS
+from db import init_db, get_user, create_user, update_user, get_promo, create_promo, use_promo
 from xui import (
     create_client,
     renew_client_by_sub_id,
@@ -22,7 +20,8 @@ from xui import (
 
 dp = Dispatcher()
 
-BOT_VERSION = "1.1.0"
+BOT_VERSION = "1.0.8"
+
 ADMIN_URL = "https://t.me/kittyvpnoff?direct"
 SUPPORT_URL = "https://t.me/kittyvpn_support_robot"
 CHANNEL = "@kittyvpnoff"
@@ -33,143 +32,48 @@ admin_action_waiting = {}
 user_action_waiting = {}
 
 
-DEFAULT_SETTINGS = {
-    "main_text": "🐈 главное меню",
-    "main_photo": "",
-    "main_button_subscription": "🔗 подписка",
-    "main_button_promo": "🎟 промокод",
-    "main_button_support": "🆘 поддержка",
-    "main_button_about": "ℹ️ о сервисе",
-    "subscription_text": "🔗 твоя подписка",
-    "subscription_photo": "",
-    "subscription_button_copy": "📋 скопировать ссылку",
-    "subscription_button_devices": "📱 устройства",
-    "subscription_button_purchase": "💳 купить / продлить",
-    "subscription_button_back": "🔙 назад",
-}
-
-CUSTOM_BUTTONS = {
-    "main_button_subscription": "подписка",
-    "main_button_promo": "промокод",
-    "main_button_support": "поддержка",
-    "main_button_about": "о сервисе",
-    "subscription_button_copy": "скопировать ссылку",
-    "subscription_button_devices": "устройства",
-    "subscription_button_purchase": "купить / продлить",
-    "subscription_button_back": "назад",
-}
-
-
-async def get_settings():
-    return {key: await get_setting(key, default) for key, default in DEFAULT_SETTINGS.items()}
-
-
-async def main_keyboard():
-    s = await get_settings()
+def main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=s["main_button_subscription"], callback_data="subscription", style="primary")],
-        [InlineKeyboardButton(text=s["main_button_promo"], callback_data="promo")],
-        [InlineKeyboardButton(text=s["main_button_support"], callback_data="support")],
-        [InlineKeyboardButton(text=s["main_button_about"], callback_data="about_service")],
+        [InlineKeyboardButton(text="🔗 подписка", callback_data="subscription")],
+        [InlineKeyboardButton(text="🎟 промокод", callback_data="promo")],
+        [InlineKeyboardButton(text="🆘 поддержка", callback_data="support")],
+        [InlineKeyboardButton(text="ℹ️ о сервисе", callback_data="about_service")],
     ])
 
 
-def subscription_keyboard(s):
+def subscription_keyboard(subscription_url: str):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=s["subscription_button_copy"], callback_data="copy_subscription", style="primary")],
-        [InlineKeyboardButton(text=s["subscription_button_devices"], callback_data="devices")],
-        [InlineKeyboardButton(text=s["subscription_button_purchase"], callback_data="purchase")],
-        [InlineKeyboardButton(text=s["subscription_button_back"], callback_data="back_to_menu")],
+        [InlineKeyboardButton(
+            text="📋 скопировать ссылку",
+            copy_text=CopyTextButton(text=subscription_url),
+        )],
+        [
+            InlineKeyboardButton(text="📱 устройства", callback_data="devices"),
+            InlineKeyboardButton(text="💳 купить / продлить", callback_data="purchase"),
+        ],
+        [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
     ])
 
 
-def customization_keyboard():
+def trial_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🏠 главное меню", callback_data="custom_main")],
-        [InlineKeyboardButton(text="🔗 меню подписки", callback_data="custom_subscription")],
-        [InlineKeyboardButton(text="👀 предпросмотр", callback_data="custom_preview")],
-        [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
-    ])
-
-
-def custom_section_keyboard(section):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✏️ текст", callback_data=f"custom_{section}_text")],
-        [InlineKeyboardButton(text="🖼 фото", callback_data=f"custom_{section}_photo")],
-        [InlineKeyboardButton(text="🔘 кнопки", callback_data=f"custom_{section}_buttons")],
-        [InlineKeyboardButton(text="🔙 назад", callback_data="customization")],
-    ])
-
-
-def custom_buttons_keyboard(section):
-    keys = [k for k in CUSTOM_BUTTONS if k.startswith(f"{section}_button_")]
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=CUSTOM_BUTTONS[k], callback_data=f"custom_button:{k}")] for k in keys
-    ] + [[InlineKeyboardButton(text="🔙 назад", callback_data=f"custom_{section}")]])
-
-
-async def render_main_menu(message: Message, replace=False):
-    s = await get_settings()
-    text = s["main_text"]
-    markup = await main_keyboard()
-    photo = s["main_photo"]
-    if photo:
-        if replace:
-            try:
-                await message.delete()
-            except Exception:
-                pass
-        await message.answer_photo(photo=photo, caption=text, reply_markup=markup)
-    elif replace:
-        await message.edit_text(text, reply_markup=markup)
-    else:
-        await message.answer(text, reply_markup=markup)
-
-
-async def render_subscription_menu(message: Message, user, replace=False):
-    s = await get_settings()
-    data = await get_subscription_data(user)
-    if not data:
-        text = "❌ подписка не найдена."
-    else:
-        text = f"{s['subscription_text']}\n\n🔗 json-подписка:\n{data['subscription_url']}\n\n⏳ осталось: {format_remaining(data['expires_at'])}"
-    markup = subscription_keyboard(s)
-    photo = s["subscription_photo"]
-    if photo:
-        if replace:
-            try:
-                await message.delete()
-            except Exception:
-                pass
-        await message.answer_photo(photo=photo, caption=text, reply_markup=markup)
-    elif replace:
-        await message.edit_text(text, reply_markup=markup)
-    else:
-        await message.answer(text, reply_markup=markup)
-
-
-async def trial_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎁 начать trial", callback_data="start_trial", style="primary")],
+        [InlineKeyboardButton(text="🎁 начать trial", callback_data="start_trial")],
         [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")]
     ])
 
 
 def admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔗 привязать подписку", callback_data="admin_bind_subscription", style="primary")],
+        [InlineKeyboardButton(text="🔗 привязать подписку", callback_data="admin_bind_subscription")],
         [InlineKeyboardButton(text="🔄 продлить подписку", callback_data="admin_renew")],
         [InlineKeyboardButton(text="🎟 создать промокод", callback_data="admin_create_promo")],
-        [InlineKeyboardButton(text="🎨 кастомизация", callback_data="customization")],
         [InlineKeyboardButton(text="👤 действия с пользователем", callback_data="admin_user_actions")],
-        [InlineKeyboardButton(text="💰 цена подписки", callback_data="admin_price")],
-        [InlineKeyboardButton(text="🧪 тестовый режим", callback_data="admin_test_mode")],
     ])
 
 
 def admin_user_actions_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 продлить на 30 дней", callback_data="admin_renew", style="primary")],
+        [InlineKeyboardButton(text="🔄 продлить на 30 дней", callback_data="admin_renew")],
         [InlineKeyboardButton(text="⛔ забанить", callback_data="admin_ban")],
         [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
     ])
@@ -217,7 +121,41 @@ async def get_subscription_data(user):
 
 
 async def send_subscription_info(message: Message, user):
-    await render_subscription_menu(message, user, replace=False)
+    data = await get_subscription_data(user)
+    if not data:
+        await message.edit_text(
+            "твоя подписка не найдена в системе.\n\nесли это ошибка, напиши в поддержку:",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL)],
+                [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
+            ]),
+        )
+        return
+
+    client = data["client"]
+    limit = client.get("limitHwid", 0)
+
+    try:
+        used = len(get_hwid_devices(user["email"]))
+    except Exception:
+        used = 0
+
+    await message.edit_text(
+        "🔗 твоя подписка\n\n"
+        "📱 устройства: "
+        f"{used} / {limit}\n"
+        f"⏳ осталось: {format_remaining(data['expires_at'])}\n\n"
+        "📲 как подключить в happ:\n"
+        "1. нажми «скопировать ссылку» ниже\n"
+        "2. открой happ и нажми «+»\n"
+        "3. выбери добавление подписки / импорт из буфера\n"
+        "4. вставь ссылку и сохрани\n"
+        "5. выбери сервер и подключись",
+        reply_markup=subscription_keyboard(data["subscription_url"]),
+    )
+
+
+
 
 
 @dp.message(CommandStart())
@@ -238,7 +176,10 @@ async def start(message: Message):
             logging.exception("failed to notify admin about /start")
 
     if user:
-        await render_main_menu(message)
+        await message.answer(
+            "🐈 главное меню",
+            reply_markup=main_keyboard(),
+        )
         return
 
     await message.answer(
@@ -246,7 +187,7 @@ async def start(message: Message):
         "добро пожаловать в kitty vpn 🐈\n\n"
         f"📢 канал: {CHANNEL}\n\n"
         f"🎁 тестовый доступ на {TRIAL_HOURS} часов.",
-        reply_markup=await trial_keyboard(),
+        reply_markup=trial_keyboard(),
     )
 
 
@@ -271,7 +212,7 @@ async def start_trial(callback: CallbackQuery):
     user = await get_user(tg_id)
     if user and find_client(user["email"]):
         await callback.answer("у тебя уже есть активная подписка", show_alert=True)
-        await render_subscription_menu(callback.message, user, replace=True)
+        await send_subscription_info(callback.message, user)
         return
     await callback.answer("создаю trial...")
     email = f"tg_{tg_id}"
@@ -300,7 +241,7 @@ async def start_trial(callback: CallbackQuery):
         "🔗 json-подписка:\n"
         f"{client['subscription_url']}\n\n"
         "добавь эту ссылку в happ или другой поддерживаемый vpn-клиент.",
-        reply_markup=await main_keyboard(),
+        reply_markup=main_keyboard(),
     )
 
 
@@ -337,7 +278,7 @@ async def devices(callback: CallbackQuery):
         "📱 устройства\n\n"
         f"используется: {len(device_list)} / {limit}\n\n{text}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🗑 удалить все устройства", callback_data="delete_all_hwid", style="primary")],
+            [InlineKeyboardButton(text="🗑 удалить все устройства", callback_data="delete_all_hwid")],
             [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
         ]),
     )
@@ -354,11 +295,11 @@ async def delete_all_hwid(callback: CallbackQuery):
         delete_all_hwid_devices(user["email"])
     except Exception:
         logging.exception("failed to delete hwids")
-        await callback.message.edit_text("❌ не удалось удалить устройства.", reply_markup=await main_keyboard())
+        await callback.message.edit_text("❌ не удалось удалить устройства.", reply_markup=main_keyboard())
         return
     await callback.message.edit_text(
         "✅ все зарегистрированные устройства удалены.\n\nтеперь можно подключить устройство заново.",
-        reply_markup=await main_keyboard(),
+        reply_markup=main_keyboard(),
     )
 
 
@@ -375,83 +316,19 @@ async def back_to_subscription(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
     await callback.answer()
-    await render_main_menu(callback.message, replace=True)
+    await callback.message.edit_text(
+        "🐈 главное меню",
+        reply_markup=main_keyboard(),
+    )
 
 
 @dp.callback_query(lambda c: c.data == "purchase")
 async def purchase(callback: CallbackQuery):
-    tg_id = callback.from_user.id
-    user = await get_user(tg_id)
-    if not user or not user["sub_id"]:
-        await callback.answer("сначала получи trial", show_alert=True)
-        return
-
-    try:
-        price = int(await get_setting("payment_price", "80"))
-        days = ROLLYPAY_DEFAULT_DAYS
-    except (TypeError, ValueError):
-        await callback.answer("ошибка настроек оплаты", show_alert=True)
-        return
-
-    username = f"@{callback.from_user.username}" if callback.from_user.username else "—"
-    test_enabled = (await get_setting("rollypay_test", "1")) == "1"
-
-    await callback.bot.send_message(
-        ADMIN_ID,
-        "💳 попытка оплаты\n\n"
-        f"👤 username: {username}\n"
-        f"🆔 telegram id: {tg_id}\n"
-        f"💰 сумма: {price} ₽\n"
-        f"📅 дней: {days}\n"
-        f"🧪 тестовый режим: {'да' if test_enabled else 'нет'}",
-    )
-
-    if not ROLLYPAY_API_KEY:
-        await callback.answer("оплата пока не настроена", show_alert=True)
-        return
-
-    try:
-        payment = await rollypay_create_payment(
-            api_key=ROLLYPAY_API_KEY,
-            amount=price,
-            tg_id=tg_id,
-            days=days,
-            test=test_enabled,
-        )
-        await create_payment(
-            payment_id=payment["payment_id"],
-            order_id=payment["order_id"],
-            tg_id=tg_id,
-            amount=str(price),
-            currency="RUB",
-            days=days,
-            test=test_enabled,
-        )
-    except Exception:
-        logging.exception("failed to create rollypay payment")
-        await callback.bot.send_message(
-            ADMIN_ID,
-            "❌ ошибка создания платежа\n\n"
-            f"👤 telegram id: {tg_id}",
-        )
-        await callback.answer("не удалось создать платёж", show_alert=True)
-        return
-
-    await callback.bot.send_message(
-        ADMIN_ID,
-        "✅ платёж создан\n\n"
-        f"🆔 payment id: {payment['payment_id']}\n"
-        f"📦 order id: {payment['order_id']}\n"
-        f"💰 сумма: {price} ₽\n"
-        f"🔗 {payment['pay_url']}",
-    )
     await callback.answer()
     await callback.message.edit_text(
-        "💳 оплата подписки\n\n"
-        f"3 устройства — {price} ₽ / {days} дней.\n\n"
-        "нажми кнопку ниже и оплати. после успешной оплаты доступ продлится автоматически.",
+        "💳 подписка\n\n3 устройства — 80 ₽ / месяц.\n\nдля покупки или продления напиши админу:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 оплатить", url=payment["pay_url"], style="primary")],
+            [InlineKeyboardButton(text="💬 написать админу", url=ADMIN_URL)],
             [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
         ]),
     )
@@ -475,7 +352,7 @@ async def about_service(callback: CallbackQuery):
     await callback.message.edit_text(
         "ℹ️ о сервисе\n\nознакомиться с документами сервиса:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔒 политика конфиденциальности", url=PRIVACY_URL, style="primary")],
+            [InlineKeyboardButton(text="🔒 политика конфиденциальности", url=PRIVACY_URL)],
             [InlineKeyboardButton(text="📄 пользовательское соглашение", url=OFFER_URL)],
             [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
         ]),
@@ -497,208 +374,6 @@ async def promo(callback: CallbackQuery):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")]
         ]),
-    )
-
-
-
-
-@dp.callback_query(lambda c: c.data == "customization")
-async def customization(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    admin_action_waiting.pop(callback.from_user.id, None)
-    await callback.answer()
-    await callback.message.edit_text("🎨 кастомизация\n\nвыбери меню:", reply_markup=customization_keyboard())
-
-
-@dp.callback_query(lambda c: c.data in ("custom_main", "custom_subscription"))
-async def custom_section(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    section = "main" if callback.data == "custom_main" else "subscription"
-    await callback.answer()
-    await callback.message.edit_text(
-        f"🎨 {'главное меню' if section == 'main' else 'меню подписки'}\n\nвыбери, что изменить:",
-        reply_markup=custom_section_keyboard(section),
-    )
-
-
-@dp.callback_query(lambda c: c.data in ("custom_main_text", "custom_subscription_text"))
-async def custom_text_start(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    section = "main" if callback.data == "custom_main_text" else "subscription"
-    admin_action_waiting[callback.from_user.id] = f"custom_text:{section}"
-    current = (await get_settings())[f"{section}_text"]
-    await callback.answer()
-    await callback.message.edit_text(
-        f"✏️ текст {'главного меню' if section == 'main' else 'меню подписки'}\n\nтекущий:\n{current}\n\nотправь новый текст.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="↩️ вернуть стандартный", callback_data=f"custom_{section}_reset_text")],
-            [InlineKeyboardButton(text="🔙 назад", callback_data=f"custom_{section}")],
-        ]),
-    )
-
-
-@dp.callback_query(lambda c: c.data in ("custom_main_photo", "custom_subscription_photo"))
-async def custom_photo_start(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    section = "main" if callback.data == "custom_main_photo" else "subscription"
-    admin_action_waiting[callback.from_user.id] = f"custom_photo:{section}"
-    await callback.answer()
-    await callback.message.edit_text(
-        "🖼 отправь новое фото одним сообщением.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🧹 удалить фото", callback_data=f"custom_{section}_delete_photo")],
-            [InlineKeyboardButton(text="🔙 назад", callback_data=f"custom_{section}")],
-        ]),
-    )
-
-
-@dp.callback_query(lambda c: c.data in ("custom_main_delete_photo", "custom_subscription_delete_photo"))
-async def custom_delete_photo(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    section = "main" if callback.data == "custom_main_delete_photo" else "subscription"
-    await delete_setting(f"{section}_photo")
-    admin_action_waiting.pop(callback.from_user.id, None)
-    await callback.answer("фото удалено")
-    await callback.message.edit_text("🧹 фото удалено.", reply_markup=custom_section_keyboard(section))
-
-
-@dp.callback_query(lambda c: c.data in ("custom_main_buttons", "custom_subscription_buttons"))
-async def custom_buttons(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    section = "main" if callback.data == "custom_main_buttons" else "subscription"
-    await callback.answer()
-    await callback.message.edit_text("🔘 выбери кнопку для переименования:", reply_markup=custom_buttons_keyboard(section))
-
-
-@dp.callback_query(lambda c: c.data.startswith("custom_button:"))
-async def custom_button_start(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    key = callback.data.split(":", 1)[1]
-    if key not in CUSTOM_BUTTONS:
-        await callback.answer("неизвестная кнопка", show_alert=True)
-        return
-    admin_action_waiting[callback.from_user.id] = f"custom_button:{key}"
-    current = (await get_settings())[key]
-    await callback.answer()
-    section = "main" if key.startswith("main_") else "subscription"
-    await callback.message.edit_text(
-        f"🔘 текущий текст:\n{current}\n\nотправь новый текст.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="↩️ вернуть стандартный", callback_data=f"custom_reset_button:{key}")],
-            [InlineKeyboardButton(text="🔙 назад", callback_data=f"custom_{section}_buttons")],
-        ]),
-    )
-
-
-@dp.callback_query(lambda c: c.data.startswith("custom_reset_button:"))
-async def custom_reset_button(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    key = callback.data.split(":", 1)[1]
-    await set_setting(key, DEFAULT_SETTINGS[key])
-    admin_action_waiting.pop(callback.from_user.id, None)
-    section = "main" if key.startswith("main_") else "subscription"
-    await callback.answer("стандарт восстановлен")
-    await callback.message.edit_text("↩️ стандартный текст восстановлен.", reply_markup=custom_buttons_keyboard(section))
-
-
-@dp.callback_query(lambda c: c.data in ("custom_main_reset_text", "custom_subscription_reset_text"))
-async def custom_reset_text(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    section = "main" if callback.data == "custom_main_reset_text" else "subscription"
-    await set_setting(f"{section}_text", DEFAULT_SETTINGS[f"{section}_text"])
-    admin_action_waiting.pop(callback.from_user.id, None)
-    await callback.answer("стандарт восстановлен")
-    await callback.message.edit_text("↩️ стандартный текст восстановлен.", reply_markup=custom_section_keyboard(section))
-
-
-@dp.callback_query(lambda c: c.data == "custom_preview")
-async def custom_preview(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    await callback.answer()
-    s = await get_settings()
-    await callback.message.edit_text(
-        f"👀 предпросмотр\n\nглавное меню: {'🖼 есть фото' if s['main_photo'] else 'без фото'}\nтекст: {s['main_text']}\n\n"
-        f"меню подписки: {'🖼 есть фото' if s['subscription_photo'] else 'без фото'}\nтекст: {s['subscription_text']}",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🏠 показать главное", callback_data="custom_preview_main")],
-            [InlineKeyboardButton(text="🔗 показать подписку", callback_data="custom_preview_sub")],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="customization")],
-        ]),
-    )
-
-
-@dp.callback_query(lambda c: c.data == "custom_preview_main")
-async def custom_preview_main(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    await callback.answer()
-    await render_main_menu(callback.message, replace=True)
-
-
-@dp.callback_query(lambda c: c.data == "custom_preview_sub")
-async def custom_preview_sub(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    user = await get_user(callback.from_user.id)
-    if not user:
-        await callback.answer("у админа нет привязанной подписки для предпросмотра", show_alert=True)
-        return
-    await callback.answer()
-    await render_subscription_menu(callback.message, user, replace=True)
-
-
-@dp.callback_query(lambda c: c.data == "admin_price")
-async def admin_price(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    current = await get_setting("payment_price", "80")
-    admin_action_waiting[callback.from_user.id] = "payment_price"
-    await callback.answer()
-    await callback.message.edit_text(
-        f"💰 цена подписки\n\nтекущая цена: {current} ₽\n\nотправь новую цену одним числом.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
-        ]),
-    )
-
-
-@dp.callback_query(lambda c: c.data == "admin_test_mode")
-async def admin_test_mode(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    current = await get_setting("rollypay_test", "1")
-    new_value = "0" if current == "1" else "1"
-    await set_setting("rollypay_test", new_value)
-    await callback.answer(
-        f"тестовый режим {'выключен' if new_value == '0' else 'включён'}"
-    )
-    await callback.message.edit_text(
-        "⚙️ админ-панель\n\nвыбери действие:",
-        reply_markup=admin_keyboard(),
     )
 
 
@@ -791,17 +466,6 @@ async def admin_back(callback: CallbackQuery):
     await callback.message.edit_text("⚙️ админ-панель\n\nвыбери действие:", reply_markup=admin_keyboard())
 
 
-@dp.message(lambda m: m.from_user.id == ADMIN_ID and m.photo)
-async def admin_custom_photo_message(message: Message):
-    action = admin_action_waiting.get(message.from_user.id)
-    if not action or not action.startswith("custom_photo:"):
-        return
-    section = action.split(":", 1)[1]
-    await set_setting(f"{section}_photo", message.photo[-1].file_id)
-    admin_action_waiting.pop(message.from_user.id, None)
-    await message.answer("✅ фото сохранено.", reply_markup=custom_section_keyboard(section))
-
-
 @dp.message()
 async def admin_message_handler(message: Message):
     if not message.text:
@@ -863,7 +527,7 @@ async def admin_message_handler(message: Message):
             f"✅ промокод применён!\n\n"
             f"🎁 начислено: +{promo['reward_days']} дней\n"
             f"⏳ осталось: {format_remaining(expires_at)}",
-            reply_markup=await main_keyboard(),
+            reply_markup=main_keyboard(),
         )
         return
     if message.from_user.id != ADMIN_ID:
@@ -871,38 +535,6 @@ async def admin_message_handler(message: Message):
 
     action = admin_action_waiting.get(message.from_user.id)
     if not action:
-        return
-
-    if action.startswith("custom_text:"):
-        section = action.split(":", 1)[1]
-        await set_setting(f"{section}_text", text)
-        admin_action_waiting.pop(message.from_user.id, None)
-        await message.answer("✅ текст сохранён.", reply_markup=custom_section_keyboard(section))
-        return
-
-    if action.startswith("custom_button:"):
-        key = action.split(":", 1)[1]
-        if key in CUSTOM_BUTTONS:
-            await set_setting(key, text)
-            admin_action_waiting.pop(message.from_user.id, None)
-            section = "main" if key.startswith("main_") else "subscription"
-            await message.answer("✅ название кнопки сохранено.", reply_markup=custom_buttons_keyboard(section))
-        return
-
-    if action == "payment_price":
-        try:
-            price = int(text)
-            if price <= 0:
-                raise ValueError
-        except ValueError:
-            await message.answer("❌ цена должна быть целым числом больше 0.")
-            return
-        await set_setting("payment_price", str(price))
-        admin_action_waiting.pop(message.from_user.id, None)
-        await message.answer(
-            f"✅ цена подписки изменена: {price} ₽.",
-            reply_markup=admin_keyboard(),
-        )
         return
 
     if action == "create_promo":
