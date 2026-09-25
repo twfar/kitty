@@ -115,19 +115,8 @@ def trial_keyboard():
 
 def admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔗 привязать подписку", callback_data="admin_bind_subscription", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton(text="🔄 продлить подписку", callback_data="admin_renew", style=ButtonStyle.PRIMARY)],
         [InlineKeyboardButton(text="🎟 создать промокод", callback_data="admin_create_promo", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton(text="👤 действия с пользователем", callback_data="admin_user_actions", style=ButtonStyle.PRIMARY)],
         [InlineKeyboardButton(text="🔧 технические работы", callback_data="admin_maintenance", style=ButtonStyle.PRIMARY)],
-    ])
-
-
-def admin_user_actions_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 продлить на 30 дней", callback_data="admin_renew", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton(text="⛔ забанить", callback_data="admin_ban", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
     ])
 
 
@@ -695,64 +684,6 @@ async def admin_create_promo(callback: CallbackQuery):
     )
 
 
-@dp.callback_query(lambda c: c.data == "admin_bind_subscription")
-async def admin_bind_subscription(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    admin_action_waiting[callback.from_user.id] = "bind"
-    await callback.answer()
-    await callback.message.edit_text(
-        "🔗 привязка подписки\n\nотправь одной строкой:\n`telegram_id sub_id`\n\nпример:\n`6682540155 99e9195c-75ce-4fa8-b313-a2eb3ebf7940`",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
-        ]),
-    )
-
-
-@dp.callback_query(lambda c: c.data == "admin_user_actions")
-async def admin_user_actions(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    await callback.answer()
-    await callback.message.edit_text("👤 действия с пользователем\n\nвыбери действие:", reply_markup=admin_user_actions_keyboard())
-
-
-@dp.callback_query(lambda c: c.data == "admin_renew")
-async def admin_renew(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    admin_action_waiting[callback.from_user.id] = "renew"
-    await callback.answer()
-    await callback.message.edit_text(
-        "🔄 продление\n\n"
-        "отправь одной строкой:\n"
-        "`sub_id дни`\n\n"
-        "например:\n"
-        "`99e9195c-75ce-4fa8-b313-a2eb3ebf7940 30`",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_user_actions")]
-        ]),
-    )
-
-
-@dp.callback_query(lambda c: c.data == "admin_ban")
-async def admin_ban(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    admin_action_waiting[callback.from_user.id] = "ban"
-    await callback.answer()
-    await callback.message.edit_text(
-        "⛔ бан пользователя\n\nотправь sub_id пользователя.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_user_actions")]
-        ]),
-    )
-
-
 @dp.callback_query(lambda c: c.data == "admin_back")
 async def admin_back(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -884,98 +815,7 @@ async def admin_message_handler(message: Message):
         )
         return
 
-    if action == "bind":
-        parts = text.split()
-        if len(parts) != 2:
-            await message.answer("❌ формат неправильный.\n\nнужно: `telegram_id sub_id`")
-            return
-        try:
-            tg_id = int(parts[0])
-        except ValueError:
-            await message.answer("❌ telegram id должен быть числом.")
-            return
-        sub_id = parts[1]
-        client = find_client_by_sub_id(sub_id)
-        if not client:
-            await message.answer("❌ подписка с таким sub_id не найдена в 3x-ui.")
-            return
-        email = client.get("email")
-        expires_at = int(client.get("expiryTime", 0)) // 1000
-        url = f"https://87.121.82.175:2096/jsnn/{sub_id}"
-        old = await get_user(tg_id)
-        values = dict(tg_id=tg_id, username=old["username"] if old else "unknown", email=email, sub_id=sub_id, subscription_url=url, status="paid", created_at=old["created_at"] if old else int(time.time()), expires_at=expires_at)
-        if old:
-            await update_user(**values)
-        else:
-            await create_user(**values)
-        admin_action_waiting.pop(message.from_user.id, None)
-        await message.answer("✅ подписка привязана\n\n" f"👤 telegram id: `{tg_id}`\n" f"📧 email: `{email}`\n" f"🔗 sub_id: `{sub_id}`\n" f"⏳ осталось: {format_remaining(expires_at)}", reply_markup=admin_keyboard())
-        return
 
-    if action == "renew":
-        parts = text.split()
-        if len(parts) != 2:
-            await message.answer("❌ формат: `sub_id дни`")
-            return
-
-        sub_id = parts[0]
-        try:
-            days = int(parts[1])
-            if days <= 0:
-                raise ValueError
-        except ValueError:
-            await message.answer("❌ количество дней должно быть целым числом больше 0.")
-            return
-
-        if not find_client_by_sub_id(sub_id):
-            await message.answer("❌ подписка с таким sub_id не найдена.")
-            return
-
-        try:
-            updated = renew_client_by_sub_id(sub_id=sub_id, days=days)
-        except Exception as e:
-            logging.exception("failed to renew client")
-            await message.answer(f"❌ ошибка продления:\n`{e}`")
-            return
-        expires_at = int(updated.get("expiryTime", 0)) // 1000
-        email = updated.get("email")
-        if email:
-            tg_id_value = updated.get("tgId")
-            if tg_id_value:
-                try:
-                    tg_id = int(tg_id_value)
-                    user = await get_user(tg_id)
-                    if user:
-                        await update_user(tg_id=tg_id, username=user["username"], email=email, sub_id=sub_id, subscription_url=f"https://87.121.82.175:2096/jsnn/{sub_id}", status="paid", created_at=user["created_at"], expires_at=expires_at)
-                except (TypeError, ValueError):
-                    pass
-        admin_action_waiting.pop(message.from_user.id, None)
-        await message.answer("✅ подписка продлена\n\n" f"🔗 sub_id: `{sub_id}`\n" f"🎁 добавлено: {days} дней\n" f"⏳ осталось: {format_remaining(expires_at)}", reply_markup=admin_keyboard())
-        return
-
-    if action == "ban":
-        sub_id = text
-        client = find_client_by_sub_id(sub_id)
-        if not client:
-            await message.answer("❌ подписка с таким sub_id не найдена.")
-            return
-        try:
-            ban_client_by_sub_id(sub_id=sub_id)
-        except Exception as e:
-            logging.exception("failed to ban client")
-            await message.answer(f"❌ ошибка бана:\n`{e}`")
-            return
-        email = client.get("email")
-        if email and client.get("tgId"):
-            try:
-                tg_id = int(client["tgId"])
-                user = await get_user(tg_id)
-                if user:
-                    await update_user(tg_id=tg_id, username=user["username"], email=user["email"], sub_id=user["sub_id"], subscription_url=user["subscription_url"], status="banned", created_at=user["created_at"], expires_at=user["expires_at"])
-            except (TypeError, ValueError):
-                pass
-        admin_action_waiting.pop(message.from_user.id, None)
-        await message.answer("⛔ пользователь забанен\n\n" f"🔗 sub_id: `{sub_id}`", reply_markup=admin_keyboard())
 
 
 async def main():
