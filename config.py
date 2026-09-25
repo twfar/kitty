@@ -16,6 +16,10 @@ XUI_API_TOKEN = os.getenv("XUI_API_TOKEN", "")
 TRIAL_HOURS = int(os.getenv("TRIAL_HOURS", "12"))
 TRIAL_LIMIT = int(os.getenv("TRIAL_LIMIT", "4"))
 
+MAIN_MENU_PHOTO = os.getenv("MAIN_MENU_PHOTO", "")
+TRIAL_MENU_PHOTO = os.getenv("TRIAL_MENU_PHOTO", "")
+PREMIUM_EMOJI_ID = os.getenv("PREMIUM_EMOJI_ID", "")
+
 ROLLYPAY_API_KEY = os.getenv("ROLLYPAY_API_KEY", "")
 ROLLYPAY_SIGNING_SECRET = os.getenv("ROLLYPAY_SIGNING_SECRET", "")
 ROLLYPAY_CALLBACK_URL = os.getenv(
