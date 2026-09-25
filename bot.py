@@ -6,6 +6,7 @@ from aiogram import Bot, Dispatcher, BaseMiddleware
 from aiogram.filters import Command, CommandStart
 from aiogram.enums import ButtonStyle
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton
+from aiogram.utils.formatting import Text, CustomEmoji
 
 from config import (
     BOT_TOKEN,
@@ -15,6 +16,9 @@ from config import (
     ROLLYPAY_TEST,
     ROLLYPAY_DEFAULT_PRICE,
     ROLLYPAY_DEFAULT_DAYS,
+    MAIN_MENU_PHOTO,
+    TRIAL_MENU_PHOTO,
+    PREMIUM_EMOJI_ID,
 )
 from db import (
     init_db,
@@ -51,6 +55,23 @@ OFFER_URL = "https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15"
 admin_action_waiting = {}
 user_action_waiting = {}
 purchase_selection = {}
+
+def menu_caption(text: str):
+    if PREMIUM_EMOJI_ID:
+        return Text(
+            CustomEmoji("🐈", custom_emoji_id=PREMIUM_EMOJI_ID),
+            " ",
+            text,
+        ).as_kwargs()
+    return {"caption": text}
+
+
+async def answer_menu(message: Message, text: str, reply_markup=None, photo: str = ""):
+    if photo:
+        kwargs = menu_caption(text)
+        await message.answer_photo(photo=photo, reply_markup=reply_markup, **kwargs)
+        return
+    await message.answer(text, reply_markup=reply_markup)
 
 
 class MaintenanceMiddleware(BaseMiddleware):
@@ -227,9 +248,11 @@ async def start(message: Message):
             logging.exception("failed to notify admin about /start")
 
     if user:
-        await message.answer(
-            "🐈 главное меню",
+        await answer_menu(
+            message,
+            "главное меню",
             reply_markup=main_keyboard(),
+            photo=MAIN_MENU_PHOTO,
         )
         return
 
