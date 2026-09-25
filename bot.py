@@ -361,7 +361,7 @@ async def purchase(callback: CallbackQuery):
         "📱 количество устройств: 3\n"
         "📅 срок: 1 месяц\n\n"
         "выбери параметры:",
-        reply_markup=purchase_selection_keyboard(3, 1),
+        reply_markup=purchase_selection_keyboard(3),
     )
 
 
