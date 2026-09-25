@@ -355,6 +355,40 @@ def renew_client_by_sub_id(sub_id, days=30, device_limit=3):
 
     return updated
 
+def edit_client_subscription(email, device_limit, days, hours, minutes):
+    client = get_client(email=email)
+    if not client:
+        raise RuntimeError("subscription not found")
+    client_data = client.get("client", client)
+    expiry_time = int(time.time() * 1000) + ((days*86400 + hours*3600 + minutes*60) * 1000)
+    payload = {
+        "email": client_data.get("email", email),
+        "subId": client_data.get("subId"),
+        "id": client_data.get("uuid") or client_data.get("id"),
+        "password": client_data.get("password"),
+        "auth": client_data.get("auth"),
+        "flow": client_data.get("flow") or "",
+        "security": client_data.get("security") or "auto",
+        "totalGB": client_data.get("totalGB", 0),
+        "expiryTime": expiry_time,
+        "limitIp": client_data.get("limitIp", 0),
+        "limitHwid": device_limit,
+        "tgId": client_data.get("tgId", 0),
+        "reset": client_data.get("reset", 0),
+        "resetDay": client_data.get("resetDay", 0),
+        "resetMax": client_data.get("resetMax", 0),
+        "trafficReset": client_data.get("trafficReset", "never"),
+        "trafficResetDay": client_data.get("trafficResetDay", 1),
+        "group": client_data.get("group") or "",
+        "comment": client_data.get("comment") or "",
+        "enable": True,
+    }
+    _request("POST", f"/panel/api/clients/update/{quote(email, safe='')}", payload)
+    updated = find_client(email)
+    if not updated:
+        raise RuntimeError("client disappeared after update")
+    return updated
+
 def ban_client_by_sub_id(sub_id):
     client = find_client_by_sub_id(sub_id)
 
