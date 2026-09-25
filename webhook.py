@@ -127,6 +127,7 @@ async def webhook(request):
         updated = renew_client_by_sub_id(
             user["sub_id"],
             int(payment["days"]),
+            device_limit=int(payment["device_limit"]),
         )
         expires_at = int(updated.get("expiryTime", 0)) // 1000
 
@@ -165,6 +166,7 @@ async def webhook(request):
         f"👤 telegram id: {payment['tg_id']}\n"
         f"💳 payment id: {payment_id}\n"
         f"🎁 добавлено: {payment['days']} дней\n"
+        f"📱 устройств: {payment['device_limit']}\n"
         f"⏳ expires: {expires_at}",
     )
 
