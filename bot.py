@@ -365,63 +365,99 @@ async def purchase(callback: CallbackQuery):
     )
 
 
-def purchase_selection_keyboard(devices: int, months: int):
+def purchase_selection_keyboard(devices: int):
+    monthly_price = 80 + (devices - 3) * 50
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="−", callback_data="purchase_device_minus"),
+            InlineKeyboardButton(text="🚫" if devices == 3 else "−", callback_data="purchase_device_value" if devices == 3 else "purchase_device_minus"),
             InlineKeyboardButton(text=str(devices), callback_data="purchase_device_value"),
-            InlineKeyboardButton(text="+", callback_data="purchase_device_plus"),
+            InlineKeyboardButton(text="🚫" if devices == 10 else "+", callback_data="purchase_device_value" if devices == 10 else "purchase_device_plus"),
         ],
-        [
-            InlineKeyboardButton(text="1 месяц", callback_data="purchase_months_1"),
-            InlineKeyboardButton(text="2 месяца", callback_data="purchase_months_2"),
-            InlineKeyboardButton(text="3 месяца", callback_data="purchase_months_3"),
-        ],
+        [InlineKeyboardButton(text=f"✅ далее · {monthly_price} ₽/мес", callback_data="purchase_to_months")],
         [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
     ])
 
 
-async def update_purchase_selection(callback: CallbackQuery, devices: int, months: int):
-    purchase_selection[callback.from_user.id] = {
-        "devices": devices,
-        "months": months,
-    }
+def purchase_months_keyboard(devices: int, months: int):
+    monthly_price = 80 + (devices - 3) * 50
+    total = monthly_price if months == 1 else int(monthly_price * 3 * 70 / 80)
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="1 месяц", callback_data="purchase_months_1"),
+            InlineKeyboardButton(text="3 месяца", callback_data="purchase_months_3"),
+        ],
+        [InlineKeyboardButton(text=f"✅ подтвердить · {total} ₽", callback_data="purchase_confirm")],
+        [InlineKeyboardButton(text="🔙 назад", callback_data="purchase_back_devices")],
+    ])
+
+
+async def update_purchase_selection(callback: CallbackQuery, devices: int, months: int = 0):
+    purchase_selection[callback.from_user.id] = {"devices": devices, "months": months}
+    monthly_price = 80 + (devices - 3) * 50
+    if months == 0:
+        await callback.message.edit_text(
+            "💳 покупка подписки\n\n"
+            f"📱 устройств: {devices}\n"
+            f"💰 цена: {monthly_price} ₽ / месяц\n\n"
+            "выбери количество устройств:",
+            reply_markup=purchase_selection_keyboard(devices),
+        )
+        return
+    total = monthly_price if months == 1 else int(monthly_price * 3 * 70 / 80)
     await callback.message.edit_text(
         "💳 покупка подписки\n\n"
-        f"📱 количество устройств: {devices}\n"
-        f"📅 срок: {months} {'месяц' if months == 1 else 'месяца'}\n\n"
-        "выбери параметры:",
-        reply_markup=purchase_selection_keyboard(devices, months),
+        f"📱 устройств: {devices}\n"
+        f"📅 срок: {months} {'месяц' if months == 1 else 'месяца'}\n"
+        f"💰 цена: {total} ₽\n\n"
+        "выбери срок:",
+        reply_markup=purchase_months_keyboard(devices, months),
     )
 
 
 @dp.callback_query(lambda c: c.data == "purchase_device_minus")
 async def purchase_device_minus(callback: CallbackQuery):
-    current = purchase_selection.get(callback.from_user.id, {"devices": 3, "months": 1})
-    devices = max(3, current["devices"] - 1)
+    current = purchase_selection.get(callback.from_user.id, {"devices": 3, "months": 0})
     await callback.answer()
-    await update_purchase_selection(callback, devices, current["months"])
+    await update_purchase_selection(callback, max(3, current["devices"] - 1), 0)
 
 
 @dp.callback_query(lambda c: c.data == "purchase_device_plus")
 async def purchase_device_plus(callback: CallbackQuery):
-    current = purchase_selection.get(callback.from_user.id, {"devices": 3, "months": 1})
-    devices = min(10, current["devices"] + 1)
+    current = purchase_selection.get(callback.from_user.id, {"devices": 3, "months": 0})
     await callback.answer()
-    await update_purchase_selection(callback, devices, current["months"])
+    await update_purchase_selection(callback, min(10, current["devices"] + 1), 0)
 
 
 @dp.callback_query(lambda c: c.data == "purchase_device_value")
 async def purchase_device_value(callback: CallbackQuery):
-    await callback.answer("от 3 до 10 устройств", show_alert=True)
+    await callback.answer("доступно от 3 до 10 устройств", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data == "purchase_to_months")
+async def purchase_to_months(callback: CallbackQuery):
+    current = purchase_selection.get(callback.from_user.id, {"devices": 3, "months": 0})
+    await callback.answer()
+    await update_purchase_selection(callback, current["devices"], 1)
 
 
 @dp.callback_query(lambda c: c.data.startswith("purchase_months_"))
 async def purchase_months(callback: CallbackQuery):
-    current = purchase_selection.get(callback.from_user.id, {"devices": 3, "months": 1})
+    current = purchase_selection.get(callback.from_user.id, {"devices": 3, "months": 0})
     months = int(callback.data.rsplit("_", 1)[1])
     await callback.answer()
     await update_purchase_selection(callback, current["devices"], months)
+
+
+@dp.callback_query(lambda c: c.data == "purchase_back_devices")
+async def purchase_back_devices(callback: CallbackQuery):
+    current = purchase_selection.get(callback.from_user.id, {"devices": 3, "months": 0})
+    await callback.answer()
+    await update_purchase_selection(callback, current["devices"], 0)
+
+
+@dp.callback_query(lambda c: c.data == "purchase_confirm")
+async def purchase_confirm(callback: CallbackQuery):
+    await callback.answer("пока без оплаты")
 
 
 @dp.callback_query(lambda c: c.data == "support")
