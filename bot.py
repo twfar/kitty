@@ -49,6 +49,7 @@ OFFER_URL = "https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15"
 
 admin_action_waiting = {}
 user_action_waiting = {}
+purchase_selection = {}
 
 
 def main_keyboard():
@@ -349,53 +350,78 @@ async def purchase(callback: CallbackQuery):
         await callback.answer("сначала получи trial", show_alert=True)
         return
 
-    if not ROLLYPAY_API_KEY:
-        await callback.answer("оплата сейчас недоступна", show_alert=True)
-        return
+    purchase_selection[callback.from_user.id] = {
+        "devices": 3,
+        "months": 1,
+    }
 
-    await callback.answer("создаю платёж...")
-
-    price = ROLLYPAY_DEFAULT_PRICE
-    days = ROLLYPAY_DEFAULT_DAYS
-
-    try:
-        payment = await rollypay_create_payment(
-            api_key=ROLLYPAY_API_KEY,
-            amount=price,
-            tg_id=callback.from_user.id,
-            days=days,
-            test=ROLLYPAY_TEST,
-        )
-
-        await create_payment(
-            payment_id=payment["payment_id"],
-            order_id=payment["order_id"],
-            tg_id=callback.from_user.id,
-            amount=str(price),
-            currency="RUB",
-            days=days,
-            test=ROLLYPAY_TEST,
-        )
-    except Exception:
-        logging.exception("failed to create rollypay payment")
-        await callback.message.edit_text(
-            "❌ не удалось создать платёж.\n\nпопробуй ещё раз или напиши в поддержку.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL)],
-                [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
-            ]),
-        )
-        return
-
+    await callback.answer()
     await callback.message.edit_text(
-        "💳 оплата подписки\n\n"
-        f"3 устройства — {price} ₽ / {days} дней.\n\n"
-        "нажми кнопку ниже и оплати. после успешной оплаты доступ продлится автоматически.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 оплатить", url=payment["pay_url"])],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
-        ]),
+        "💳 покупка подписки\n\n"
+        "📱 количество устройств: 3\n"
+        "📅 срок: 1 месяц\n\n"
+        "выбери параметры:",
+        reply_markup=purchase_selection_keyboard(3, 1),
     )
+
+
+def purchase_selection_keyboard(devices: int, months: int):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="−", callback_data="purchase_device_minus"),
+            InlineKeyboardButton(text=str(devices), callback_data="purchase_device_value"),
+            InlineKeyboardButton(text="+", callback_data="purchase_device_plus"),
+        ],
+        [
+            InlineKeyboardButton(text="1 месяц", callback_data="purchase_months_1"),
+            InlineKeyboardButton(text="2 месяца", callback_data="purchase_months_2"),
+            InlineKeyboardButton(text="3 месяца", callback_data="purchase_months_3"),
+        ],
+        [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
+    ])
+
+
+async def update_purchase_selection(callback: CallbackQuery, devices: int, months: int):
+    purchase_selection[callback.from_user.id] = {
+        "devices": devices,
+        "months": months,
+    }
+    await callback.message.edit_text(
+        "💳 покупка подписки\n\n"
+        f"📱 количество устройств: {devices}\n"
+        f"📅 срок: {months} {'месяц' if months == 1 else 'месяца'}\n\n"
+        "выбери параметры:",
+        reply_markup=purchase_selection_keyboard(devices, months),
+    )
+
+
+@dp.callback_query(lambda c: c.data == "purchase_device_minus")
+async def purchase_device_minus(callback: CallbackQuery):
+    current = purchase_selection.get(callback.from_user.id, {"devices": 3, "months": 1})
+    devices = max(3, current["devices"] - 1)
+    await callback.answer()
+    await update_purchase_selection(callback, devices, current["months"])
+
+
+@dp.callback_query(lambda c: c.data == "purchase_device_plus")
+async def purchase_device_plus(callback: CallbackQuery):
+    current = purchase_selection.get(callback.from_user.id, {"devices": 3, "months": 1})
+    devices = min(10, current["devices"] + 1)
+    await callback.answer()
+    await update_purchase_selection(callback, devices, current["months"])
+
+
+@dp.callback_query(lambda c: c.data == "purchase_device_value")
+async def purchase_device_value(callback: CallbackQuery):
+    await callback.answer("от 3 до 10 устройств", show_alert=True)
+
+
+@dp.callback_query(lambda c: c.data.startswith("purchase_months_"))
+async def purchase_months(callback: CallbackQuery):
+    current = purchase_selection.get(callback.from_user.id, {"devices": 3, "months": 1})
+    months = int(callback.data.rsplit("_", 1)[1])
+    await callback.answer()
+    await update_purchase_selection(callback, current["devices"], months)
 
 
 @dp.callback_query(lambda c: c.data == "support")
