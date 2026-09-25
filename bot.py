@@ -345,10 +345,39 @@ async def kitty_admin(message: Message):
 
 
 @dp.callback_query(lambda c: c.data == "start_trial")
+async def check_channel_subscription(bot: Bot, user_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(CHANNEL, user_id)
+        return member.status in ("member", "administrator", "creator")
+    except Exception:
+        logging.exception("failed to check channel subscription")
+        return False
+
+
 async def start_trial(callback: CallbackQuery):
+
     tg_id = callback.from_user.id
     username = callback.from_user.username or "unknown"
     user = await get_user(tg_id)
+
+    if not await check_channel_subscription(callback.bot, tg_id):
+        await callback.answer(
+            "сначала подпишись на канал",
+            show_alert=True,
+        )
+        await edit_menu(
+            callback.message,
+            "🎁 чтобы получить trial, подпишись на канал kitty vpn.
+
+"
+            "после подписки нажми «я подписался».",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📢 подписаться на канал", url="https://t.me/kittyvpnoff", style=ButtonStyle.PRIMARY)],
+                [InlineKeyboardButton(text="✅ я подписался", callback_data="start_trial", style=ButtonStyle.SUCCESS)],
+                [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
+            ]),
+        )
+        return
     if user and find_client(user["email"]):
         await callback.answer("у тебя уже есть активная подписка", show_alert=True)
         await send_subscription_info(callback.message, user)
