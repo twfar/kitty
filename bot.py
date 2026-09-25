@@ -158,6 +158,7 @@ dp.callback_query.outer_middleware(MaintenanceMiddleware())
 def main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔗 подписка", callback_data="subscription", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton(text="📢 наш канал", url="https://t.me/kittyvpnoff")],
         [InlineKeyboardButton(text="🎟 промокод", callback_data="promo")],
         [InlineKeyboardButton(text="🆘 поддержка", callback_data="support")],
         [InlineKeyboardButton(text="ℹ️ о сервисе", callback_data="about_service")],
