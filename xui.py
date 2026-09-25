@@ -354,3 +354,23 @@ def renew_client_by_sub_id(sub_id, days=30, device_limit=3):
         raise RuntimeError("client disappeared after renewal")
 
     return updated
+
+
+def delete_client_by_tg_id(tg_id):
+    client = get_client(tg_id=tg_id)
+
+    if not client:
+        return False
+
+    client_data = client.get("client", client)
+    email = client_data.get("email")
+
+    if not email:
+        raise RuntimeError("client email not found")
+
+    _request(
+        "POST",
+        f"/panel/api/clients/del/{quote(email, safe='')}?keepTraffic=0",
+    )
+
+    return True
