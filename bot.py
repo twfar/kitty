@@ -373,6 +373,14 @@ async def grant_trial(callback: CallbackQuery):
             await send_subscription_info(callback.message, user)
         return
 
+    if user and user["status"] == "pending":
+        try:
+            delete_client_by_tg_id(tg_id)
+        except Exception:
+            logging.exception("failed to remove pending client before trial")
+        await delete_user_data(tg_id)
+        user = None
+
     email = f"tg_{tg_id}"
     if find_client(email):
         await callback.answer("trial уже был создан", show_alert=True)
