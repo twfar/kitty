@@ -256,12 +256,14 @@ async def start(message: Message):
         )
         return
 
-    await message.answer(
+    await answer_menu(
+        message,
         "привет 👋\n\n"
         "добро пожаловать в kitty vpn 🐈\n\n"
         f"📢 канал: {CHANNEL}\n\n"
         f"🎁 тестовый доступ на {TRIAL_HOURS} часов.",
         reply_markup=trial_keyboard(),
+        photo=TRIAL_MENU_PHOTO,
     )
 
 
@@ -727,6 +729,16 @@ async def admin_back(callback: CallbackQuery):
 
 @dp.message()
 async def admin_message_handler(message: Message):
+    if message.from_user.id == ADMIN_ID and message.entities:
+        custom = [
+            entity.custom_emoji_id
+            for entity in message.entities
+            if entity.type == "custom_emoji" and entity.custom_emoji_id
+        ]
+        if custom:
+            await message.answer("custom_emoji_id:\n" + "\n".join(custom))
+            return
+
     if not message.text:
         return
     text = message.text.strip()
