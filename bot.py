@@ -84,9 +84,9 @@ dp.callback_query.outer_middleware(MaintenanceMiddleware())
 def main_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔗 подписка", callback_data="subscription", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton(text="🎟 промокод", callback_data="promo", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton(text="🆘 поддержка", callback_data="support", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton(text="ℹ️ о сервисе", callback_data="about_service", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton(text="🎟 промокод", callback_data="promo")],
+        [InlineKeyboardButton(text="🆘 поддержка", callback_data="support")],
+        [InlineKeyboardButton(text="ℹ️ о сервисе", callback_data="about_service")],
     ])
 
 
@@ -108,7 +108,7 @@ def subscription_keyboard(subscription_url: str):
 def trial_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎁 начать trial", callback_data="start_trial", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu", style=ButtonStyle.PRIMARY)]
+        [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")]
     ])
 
 
@@ -178,7 +178,7 @@ async def send_subscription_info(message: Message, user):
             "твоя подписка не найдена в системе.\n\nесли это ошибка, напиши в поддержку:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL, style=ButtonStyle.PRIMARY)],
-                [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu", style=ButtonStyle.PRIMARY)],
+                [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
             ]),
         )
         return
@@ -330,7 +330,7 @@ async def devices(callback: CallbackQuery):
         f"используется: {len(device_list)} / {limit}\n\n{text}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🗑 удалить все устройства", callback_data="delete_all_hwid", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription", style=ButtonStyle.PRIMARY)],
+            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
         ]),
     )
 
@@ -405,7 +405,7 @@ def purchase_selection_keyboard(devices: int):
             InlineKeyboardButton(text="🚫" if devices == 10 else "+", callback_data="purchase_device_value" if devices == 10 else "purchase_device_plus"),
         ],
         [InlineKeyboardButton(text=f"✅ далее · {monthly_price} ₽/мес", callback_data="purchase_to_months", style=ButtonStyle.SUCCESS)],
-        [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
     ])
 
 
@@ -547,7 +547,7 @@ async def purchase_confirm(callback: CallbackQuery):
             "❌ не удалось создать платёж.\n\n"
             "попробуй ещё раз или напиши в поддержку.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription", style=ButtonStyle.PRIMARY)],
+                [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
             ]),
         )
         return
@@ -560,7 +560,7 @@ async def purchase_confirm(callback: CallbackQuery):
         "после успешной оплаты подписка выдастся автоматически.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💳 оплатить", url=payment["pay_url"], style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription", style=ButtonStyle.PRIMARY)],
+            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
         ]),
     )
 
@@ -572,7 +572,7 @@ async def support(callback: CallbackQuery):
         "🆘 поддержка\n\nесли что-то не работает или есть вопрос — создай обращение в тикет-системе:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL, style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu", style=ButtonStyle.PRIMARY)],
+            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
         ]),
     )
 
@@ -585,7 +585,7 @@ async def about_service(callback: CallbackQuery):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔒 политика конфиденциальности", url=PRIVACY_URL, style=ButtonStyle.PRIMARY)],
             [InlineKeyboardButton(text="📄 пользовательское соглашение", url=OFFER_URL)],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu", style=ButtonStyle.PRIMARY)],
+            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
         ]),
     )
 
@@ -603,7 +603,7 @@ async def promo(callback: CallbackQuery):
     await callback.message.edit_text(
         "🎟 промокод\n\nотправь промокод одним сообщением.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu", style=ButtonStyle.PRIMARY)]
+            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")]
         ]),
     )
 
