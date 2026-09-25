@@ -484,9 +484,84 @@ async def purchase_back_devices(callback: CallbackQuery):
     await update_purchase_selection(callback, current["devices"], 0)
 
 
+def purchase_price(devices: int, months: int) -> float:
+    monthly_price = 80 + (devices - 3) * 50
+    if months == 1:
+        return float(monthly_price)
+    if months == 3:
+        return monthly_price * 3 * 70 / 80
+    raise ValueError("unsupported subscription period")
+
+
+def format_price(amount: float) -> str:
+    if amount.is_integer():
+        return str(int(amount))
+    return f"{amount:.2f}".rstrip("0").rstrip(".")
+
+
 @dp.callback_query(lambda c: c.data == "purchase_confirm")
 async def purchase_confirm(callback: CallbackQuery):
-    await callback.answer("пока без оплаты")
+    current = purchase_selection.get(callback.from_user.id)
+    if not current:
+        await callback.answer("выбери параметры заново", show_alert=True)
+        return
+
+    devices = int(current["devices"])
+    months = int(current["months"])
+
+    if months not in (1, 3):
+        await callback.answer("сначала выбери срок", show_alert=True)
+        return
+
+    amount = purchase_price(devices, months)
+    days = months * 30
+
+    await callback.answer("создаю платёж...")
+
+    try:
+        payment = await rollypay_create_payment(
+            api_key=ROLLYPAY_API_KEY,
+            amount=amount,
+            tg_id=callback.from_user.id,
+            days=days,
+            test=ROLLYPAY_TEST,
+            devices=devices,
+            months=months,
+        )
+
+        await create_payment(
+            payment_id=payment["payment_id"],
+            order_id=payment["order_id"],
+            tg_id=callback.from_user.id,
+            amount=f"{amount:.2f}",
+            currency="RUB",
+            days=days,
+            test=ROLLYPAY_TEST,
+            device_limit=devices,
+            months=months,
+        )
+    except Exception:
+        logging.exception("failed to create rollypay payment")
+        await callback.message.edit_text(
+            "❌ не удалось создать платёж.\n\n"
+            "попробуй ещё раз или напиши в поддержку.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
+            ]),
+        )
+        return
+
+    await callback.message.edit_text(
+        "💳 платёж создан\n\n"
+        f"📱 устройств: {devices}\n"
+        f"📅 срок: {months} {'месяц' if months == 1 else 'месяца'}\n"
+        f"💰 сумма: {format_price(amount)} ₽\n\n"
+        "после успешной оплаты подписка выдастся автоматически.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💳 оплатить", url=payment["pay_url"])],
+            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
+        ]),
+    )
 
 
 @dp.callback_query(lambda c: c.data == "support")
