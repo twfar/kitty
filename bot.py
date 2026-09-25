@@ -101,7 +101,7 @@ def subscription_keyboard(subscription_url: str):
             InlineKeyboardButton(text="📱 устройства", callback_data="devices"),
             InlineKeyboardButton(text="💳 купить / продлить", callback_data="purchase"),
         ],
-        [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
     ])
 
 
