@@ -6,7 +6,7 @@ import time
 from aiogram import Bot, Dispatcher, BaseMiddleware
 from aiogram.filters import Command, CommandStart
 from aiogram.enums import ButtonStyle
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton, InputMediaPhoto
 from aiogram.utils.formatting import Text, CustomEmoji
 
 from config import (
@@ -104,15 +104,23 @@ async def answer_menu(message: Message, text: str, reply_markup=None, photo: str
 
 
 async def edit_menu(message: Message, text: str, reply_markup=None):
-    try:
-        await message.delete()
-    except Exception:
-        pass
+    photo = random_menu_photo()
     kwargs = menu_caption(text)
-    await message.answer_photo(
-        photo=random_menu_photo(),
+
+    if message.photo:
+        await message.edit_media(
+            media=InputMediaPhoto(
+                media=photo,
+                caption=kwargs["caption"],
+                caption_entities=kwargs.get("caption_entities"),
+            ),
+            reply_markup=reply_markup,
+        )
+        return
+
+    await message.edit_text(
+        text,
         reply_markup=reply_markup,
-        **kwargs,
     )
 
 
