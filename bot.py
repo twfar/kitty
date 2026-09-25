@@ -367,9 +367,7 @@ async def start_trial(callback: CallbackQuery):
         )
         await edit_menu(
             callback.message,
-            "🎁 чтобы получить trial, подпишись на канал kitty vpn.
-
-"
+            "🎁 чтобы получить trial, подпишись на канал kitty vpn.\n\n"
             "после подписки нажми «я подписался».",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="📢 подписаться на канал", url="https://t.me/kittyvpnoff", style=ButtonStyle.PRIMARY)],
