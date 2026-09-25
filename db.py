@@ -70,6 +70,44 @@ async def init_db():
             )
         """)
 
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+
+        await db.execute(
+            "INSERT OR IGNORE INTO bot_settings (key, value) VALUES (?, ?)",
+            ("maintenance_enabled", "0"),
+        )
+        await db.execute(
+            "INSERT OR IGNORE INTO bot_settings (key, value) VALUES (?, ?)",
+            (
+                "maintenance_message",
+                "🔧 технические работы\\n\\nбот временно недоступен. попробуй позже.",
+            ),
+        )
+
+        await db.commit()
+
+
+async def get_setting(key: str, default=None):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            "SELECT value FROM bot_settings WHERE key = ?",
+            (key,),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else default
+
+
+async def set_setting(key: str, value):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO bot_settings (key, value) VALUES (?, ?)",
+            (key, str(value)),
+        )
         await db.commit()
 
 
