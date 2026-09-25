@@ -70,6 +70,14 @@ async def init_db():
             )
         """)
 
+        cursor = await db.execute("PRAGMA table_info(payments)")
+        payment_columns = {row[1] for row in await cursor.fetchall()}
+
+        if "device_limit" not in payment_columns:
+            await db.execute("ALTER TABLE payments ADD COLUMN device_limit INTEGER NOT NULL DEFAULT 3")
+        if "months" not in payment_columns:
+            await db.execute("ALTER TABLE payments ADD COLUMN months INTEGER NOT NULL DEFAULT 1")
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS bot_settings (
                 key TEXT PRIMARY KEY,
@@ -289,15 +297,17 @@ async def create_payment(
     currency,
     days,
     test,
+    device_limit=3,
+    months=1,
 ):
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute(
             """
             INSERT OR IGNORE INTO payments (
                 payment_id, order_id, tg_id, amount, currency,
-                days, test, status, created_at
+                days, test, device_limit, months, status, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'created', strftime('%s', 'now'))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'created', strftime('%s', 'now'))
             """,
             (
                 payment_id,
@@ -307,6 +317,8 @@ async def create_payment(
                 currency,
                 days,
                 int(test),
+                device_limit,
+                months,
             ),
         )
         await db.commit()
