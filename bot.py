@@ -60,7 +60,6 @@ purchase_selection = {}
 MENU_PHOTOS = [
     "AgACAgIAAxkBAAIDlGq2rmZEjEOkJFoe1hsAAbSALQdmQAACRyRrG5snqUldG_wdjq9mswEAAwIAA3kAAz0E",
     "AgACAgIAAxkBAAIDlmq2rmoO0Ya8Q7GEgoThyR-QmpAoAAJIJGsbmyepSTOPgBVl5TspAQADAgADeQADPQQ",
-    "AgACAgIAAxkBAAIDmGq2rnL6Q8GKB9cQ2w-2FBTHow2BAALXGmsbgJKxSTC6etz94ZTpAQADAgADdwADPQQ",
     "AgACAgIAAxkBAAIDmmq2roCyU-GOe28I7aCWIT-7HM46AAJCJGsbmyepSREsrjLJ-WGwAQADAgADeQADPQQ",
     "AgACAgIAAxkBAAIDnGq2sBYUWU6EoG9E3Ram31uL9OVfAAIhIWsbRWO4SR_R4V2WgQ_RAQADAgADdwADPQQ",
     "AgACAgIAAxkBAAIDnWq2sBaIYSyVPZ0v1DFAJAEuKYZPAAIiIWsbRWO4SUoepsfddr-bAQADAgADdwADPQQ",
@@ -103,13 +102,13 @@ async def answer_menu(message: Message, text: str, reply_markup=None, photo: str
     )
 
 
-async def edit_menu(callback: CallbackQuery, text: str, reply_markup=None):
+async def edit_menu(message: Message, text: str, reply_markup=None):
     try:
-        await callback.message.delete()
+        await message.delete()
     except Exception:
         pass
     kwargs = menu_caption(text)
-    await callback.message.answer_photo(
+    await message.answer_photo(
         photo=random_menu_photo(),
         reply_markup=reply_markup,
         **kwargs,
@@ -235,7 +234,7 @@ async def get_subscription_data(user):
 async def send_subscription_info(message: Message, user):
     data = await get_subscription_data(user)
     if not data:
-        await message.edit_text(
+        await edit_menu(message, 
             "твоя подписка не найдена в системе.\n\nесли это ошибка, напиши в поддержку:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL, style=ButtonStyle.PRIMARY)],
@@ -254,7 +253,7 @@ async def send_subscription_info(message: Message, user):
     except Exception:
         used = 0
 
-    await message.edit_text(
+    await edit_menu(message, 
         "🔗 твоя подписка\n\n"
         "📱 устройства: "
         f"{used} / {limit}\n"
@@ -367,7 +366,7 @@ async def start_trial(callback: CallbackQuery):
         f"🆔 telegram id: `{tg_id}`\n"
         f"🔗 sub id: `{client['sub_id']}`",
     )
-    await edit_menu(callback, 
+    await edit_menu(callback.message, 
         "🎁 trial активирован!\n\n"
         "🔗 json-подписка:\n"
         f"{client['subscription_url']}\n\n"
@@ -407,7 +406,7 @@ async def devices(callback: CallbackQuery):
     limit = client_data.get("limitHwid", 0)
     text = "\n".join(f"• {d.get('deviceModel') or 'неизвестное устройство'}" for d in device_list) if device_list else "нет зарегистрированных устройств"
     await callback.answer()
-    await callback.message.edit_text(
+    await edit_menu(callback.message, 
         "📱 устройства\n\n"
         f"используется: {len(device_list)} / {limit}\n\n{text}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -428,9 +427,9 @@ async def delete_all_hwid(callback: CallbackQuery):
         delete_all_hwid_devices(user["email"])
     except Exception:
         logging.exception("failed to delete hwids")
-        await callback.message.edit_text("❌ не удалось удалить устройства.", reply_markup=main_keyboard())
+        await edit_menu(callback.message, "❌ не удалось удалить устройства.", reply_markup=main_keyboard())
         return
-    await callback.message.edit_text(
+    await edit_menu(callback.message, 
         "✅ все зарегистрированные устройства удалены.\n\nтеперь можно подключить устройство заново.",
         reply_markup=main_keyboard(),
     )
@@ -449,7 +448,7 @@ async def back_to_subscription(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.edit_text(
+    await edit_menu(callback.message, 
         "🐈 главное меню",
         reply_markup=main_keyboard(),
     )
@@ -469,7 +468,7 @@ async def purchase(callback: CallbackQuery):
     }
 
     await callback.answer()
-    await callback.message.edit_text(
+    await edit_menu(callback.message, 
         "💳 покупка подписки\n\n"
         "📱 количество устройств: 3\n"
         "📅 срок: 1 месяц\n\n"
@@ -507,7 +506,7 @@ async def update_purchase_selection(callback: CallbackQuery, devices: int, month
     purchase_selection[callback.from_user.id] = {"devices": devices, "months": months}
     monthly_price = 80 + (devices - 3) * 50
     if months == 0:
-        await callback.message.edit_text(
+        await edit_menu(callback.message, 
             "💳 покупка подписки\n\n"
             f"📱 устройств: {devices}\n"
             f"💰 цена: {monthly_price} ₽ / месяц\n\n"
@@ -516,7 +515,7 @@ async def update_purchase_selection(callback: CallbackQuery, devices: int, month
         )
         return
     total = purchase_price(devices, months)
-    await callback.message.edit_text(
+    await edit_menu(callback.message, 
         "💳 покупка подписки\n\n"
         f"📱 устройств: {devices}\n"
         f"📅 срок: {months} {'месяц' if months == 1 else 'месяца'}\n"
@@ -625,7 +624,7 @@ async def purchase_confirm(callback: CallbackQuery):
         )
     except Exception:
         logging.exception("failed to create rollypay payment")
-        await callback.message.edit_text(
+        await edit_menu(callback.message, 
             "❌ не удалось создать платёж.\n\n"
             "попробуй ещё раз или напиши в поддержку.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -634,7 +633,7 @@ async def purchase_confirm(callback: CallbackQuery):
         )
         return
 
-    await callback.message.edit_text(
+    await edit_menu(callback.message, 
         "💳 платёж создан\n\n"
         f"📱 устройств: {devices}\n"
         f"📅 срок: {months} {'месяц' if months == 1 else 'месяца'}\n"
@@ -650,7 +649,7 @@ async def purchase_confirm(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "support")
 async def support(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.edit_text(
+    await edit_menu(callback.message, 
         "🆘 поддержка\n\nесли что-то не работает или есть вопрос — создай обращение в тикет-системе:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL, style=ButtonStyle.PRIMARY)],
@@ -662,7 +661,7 @@ async def support(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "about_service")
 async def about_service(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.edit_text(
+    await edit_menu(callback.message, 
         "ℹ️ о сервисе\n\nознакомиться с документами сервиса:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔒 политика конфиденциальности", url=PRIVACY_URL, style=ButtonStyle.PRIMARY)],
@@ -682,7 +681,7 @@ async def promo(callback: CallbackQuery):
 
     user_action_waiting[callback.from_user.id] = "promo"
     await callback.answer()
-    await callback.message.edit_text(
+    await edit_menu(callback.message, 
         "🎟 промокод\n\nотправь промокод одним сообщением.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")]
@@ -704,7 +703,7 @@ async def admin_maintenance(callback: CallbackQuery):
     status = "включены" if enabled == "1" else "выключены"
 
     await callback.answer()
-    await callback.message.edit_text(
+    await edit_menu(callback.message, 
         "🔧 технические работы\n\n"
         f"статус: {status}\n\n"
         f"сообщение:\n{maintenance_message}",
@@ -741,7 +740,7 @@ async def admin_maintenance_message(callback: CallbackQuery):
 
     admin_action_waiting[callback.from_user.id] = "maintenance_message"
     await callback.answer()
-    await callback.message.edit_text(
+    await edit_menu(callback.message, 
         "✏️ сообщение тех. работ\n\n"
         "отправь новое сообщение одним сообщением.\n"
         "оно будет отправляться пользователям при /start.",
@@ -759,7 +758,7 @@ async def admin_create_promo(callback: CallbackQuery):
 
     admin_action_waiting[callback.from_user.id] = "create_promo"
     await callback.answer()
-    await callback.message.edit_text(
+    await edit_menu(callback.message, 
         "🎟 создание промокода\n\n"
         "отправь одной строкой:\n"
         "`код дни лимит`\n\n"
@@ -779,7 +778,7 @@ async def admin_back(callback: CallbackQuery):
         return
     admin_action_waiting.pop(callback.from_user.id, None)
     await callback.answer()
-    await callback.message.edit_text("⚙️ админ-панель\n\nвыбери действие:", reply_markup=admin_keyboard())
+    await edit_menu(callback.message, "⚙️ админ-панель\n\nвыбери действие:", reply_markup=admin_keyboard())
 
 
 @dp.message()
