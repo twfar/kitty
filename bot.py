@@ -793,6 +793,7 @@ async def admin_back(callback: CallbackQuery):
         await callback.answer("доступ запрещён", show_alert=True)
         return
     admin_action_waiting.pop(callback.from_user.id, None)
+    admin_subscription.pop(callback.from_user.id, None)
     await callback.answer()
     await callback.message.edit_text("⚙️ админ-панель\n\nвыбери действие:", reply_markup=admin_keyboard())
 
