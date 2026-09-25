@@ -43,6 +43,8 @@ from xui import (
     find_client,
     get_hwid_devices,
     delete_all_hwid_devices,
+    delete_client_by_tg_id,
+    disable_client,
 )
 
 dp = Dispatcher()
