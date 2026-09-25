@@ -359,3 +359,11 @@ async def payment_paid_once(payment_id):
         )
         await db.commit()
         return cursor.rowcount == 1
+
+
+async def delete_user_data(tg_id: int):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("DELETE FROM promo_uses WHERE tg_id = ?", (tg_id,))
+        await db.execute("DELETE FROM payments WHERE tg_id = ?", (tg_id,))
+        await db.execute("DELETE FROM users WHERE tg_id = ?", (tg_id,))
+        await db.commit()
