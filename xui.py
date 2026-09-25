@@ -301,7 +301,7 @@ def delete_all_hwid_devices(email):
     )
 
     return True
-def renew_client_by_sub_id(sub_id, days=30):
+def renew_client_by_sub_id(sub_id, days=30, device_limit=3):
     client = find_client_by_sub_id(sub_id)
 
     if not client:
@@ -330,7 +330,7 @@ def renew_client_by_sub_id(sub_id, days=30):
         "totalGB": client_data.get("totalGB", 0),
         "expiryTime": expiry_time,
         "limitIp": client_data.get("limitIp", 0),
-        "limitHwid": 3,
+        "limitHwid": device_limit,
         "tgId": client_data.get("tgId", 0),
         "reset": client_data.get("reset", 0),
         "resetDay": client_data.get("resetDay", 0),
