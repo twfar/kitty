@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 
-from aiogram import Bot, Dispatcher
+from aiogram import Bot, Dispatcher, BaseMiddleware
 from aiogram.filters import Command, CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton
 
@@ -24,6 +24,8 @@ from db import (
     create_promo,
     use_promo,
     create_payment,
+    get_setting,
+    set_setting,
 )
 from rollypay import create_payment as rollypay_create_payment
 
@@ -50,6 +52,32 @@ OFFER_URL = "https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15"
 admin_action_waiting = {}
 user_action_waiting = {}
 purchase_selection = {}
+
+
+class MaintenanceMiddleware(BaseMiddleware):
+    async def __call__(self, handler, event, data):
+        if event.from_user.id == ADMIN_ID:
+            return await handler(event, data)
+
+        enabled = await get_setting("maintenance_enabled", "0")
+        if enabled != "1":
+            return await handler(event, data)
+
+        if isinstance(event, Message):
+            text = event.text or ""
+            if text.split()[0].split("@")[0] == "/start" if text else False:
+                maintenance_message = await get_setting(
+                    "maintenance_message",
+                    "🔧 технические работы\\n\\nбот временно недоступен. попробуй позже.",
+                )
+                await event.answer(maintenance_message)
+            return
+
+        return
+
+
+dp.message.outer_middleware(MaintenanceMiddleware())
+dp.callback_query.outer_middleware(MaintenanceMiddleware())
 
 
 def main_keyboard():
@@ -88,6 +116,7 @@ def admin_keyboard():
         [InlineKeyboardButton(text="🔄 продлить подписку", callback_data="admin_renew")],
         [InlineKeyboardButton(text="🎟 создать промокод", callback_data="admin_create_promo")],
         [InlineKeyboardButton(text="👤 действия с пользователем", callback_data="admin_user_actions")],
+        [InlineKeyboardButton(text="🔧 технические работы", callback_data="admin_maintenance")],
     ])
 
 
@@ -503,6 +532,67 @@ async def promo(callback: CallbackQuery):
     )
 
 
+@dp.callback_query(lambda c: c.data == "admin_maintenance")
+async def admin_maintenance(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    enabled = await get_setting("maintenance_enabled", "0")
+    maintenance_message = await get_setting(
+        "maintenance_message",
+        "🔧 технические работы\n\nбот временно недоступен. попробуй позже.",
+    )
+    status = "включены" if enabled == "1" else "выключены"
+
+    await callback.answer()
+    await callback.message.edit_text(
+        "🔧 технические работы\n\n"
+        f"статус: {status}\n\n"
+        f"сообщение:\n{maintenance_message}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="🔴 выключить" if enabled == "1" else "🟢 включить",
+                callback_data="admin_maintenance_toggle",
+            )],
+            [InlineKeyboardButton(text="✏️ изменить сообщение", callback_data="admin_maintenance_message")],
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+        ]),
+    )
+
+
+@dp.callback_query(lambda c: c.data == "admin_maintenance_toggle")
+async def admin_maintenance_toggle(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    enabled = await get_setting("maintenance_enabled", "0")
+    new_value = "0" if enabled == "1" else "1"
+    await set_setting("maintenance_enabled", new_value)
+    await callback.answer("тех. работы включены" if new_value == "1" else "тех. работы выключены")
+
+    await admin_maintenance(callback)
+
+
+@dp.callback_query(lambda c: c.data == "admin_maintenance_message")
+async def admin_maintenance_message(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    admin_action_waiting[callback.from_user.id] = "maintenance_message"
+    await callback.answer()
+    await callback.message.edit_text(
+        "✏️ сообщение тех. работ\n\n"
+        "отправь новое сообщение одним сообщением.\n"
+        "оно будет отправляться пользователям при /start.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_maintenance")],
+        ]),
+    )
+
+
 @dp.callback_query(lambda c: c.data == "admin_create_promo")
 async def admin_create_promo(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -661,6 +751,15 @@ async def admin_message_handler(message: Message):
 
     action = admin_action_waiting.get(message.from_user.id)
     if not action:
+        return
+
+    if action == "maintenance_message":
+        await set_setting("maintenance_message", text)
+        admin_action_waiting.pop(message.from_user.id, None)
+        await message.answer(
+            "✅ сообщение тех. работ обновлено.",
+            reply_markup=admin_keyboard(),
+        )
         return
 
     if action == "create_promo":
