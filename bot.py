@@ -889,7 +889,7 @@ async def admin_message_handler(message: Message):
         await message.answer(
             "🛠 редактор подписки\n\n"
             f"👤 telegram id: {tg_id}\n"
-            f"📱 лимит hwid: {data.get("limitHwid",1)}\n"
+            f"📱 лимит hwid: {data.get('limitHwid', 1)}\n"
             f"⏳ осталось: {format_remaining(int(data.get("expiryTime",0))//1000)}",
             reply_markup=admin_subscription_keyboard(int(data.get("limitHwid",1))),
         )
