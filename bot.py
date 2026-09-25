@@ -267,6 +267,19 @@ async def start(message: Message):
     )
 
 
+@dp.message(Command("getid"))
+async def get_id(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    admin_action_waiting[message.from_user.id] = "get_id"
+    await message.answer(
+        "отправь premium emoji или фото.\n\n"
+        "для premium emoji бот вернёт custom_emoji_id.\n"
+        "для фото бот вернёт file_id."
+    )
+
+
 @dp.message(Command("kittyadmin"))
 async def kitty_admin(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -729,15 +742,32 @@ async def admin_back(callback: CallbackQuery):
 
 @dp.message()
 async def admin_message_handler(message: Message):
-    if message.from_user.id == ADMIN_ID and message.entities:
-        custom = [
-            entity.custom_emoji_id
-            for entity in message.entities
-            if entity.type == "custom_emoji" and entity.custom_emoji_id
-        ]
-        if custom:
-            await message.answer("custom_emoji_id:\n" + "\n".join(custom))
+    if message.from_user.id != ADMIN_ID:
+        if not message.text:
             return
+    else:
+        action = admin_action_waiting.get(message.from_user.id)
+
+        if action == "get_id":
+            if message.photo:
+                file_id = message.photo[-1].file_id
+                await message.answer(f"photo_file_id:\n{file_id}")
+                return
+
+            if message.entities:
+                custom = [
+                    entity.custom_emoji_id
+                    for entity in message.entities
+                    if entity.type == "custom_emoji" and entity.custom_emoji_id
+                ]
+                if custom:
+                    await message.answer(
+                        "custom_emoji_id:\n" + "\n".join(custom)
+                    )
+                    return
+
+            if not message.text:
+                return
 
     if not message.text:
         return
