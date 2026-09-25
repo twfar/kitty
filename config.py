@@ -39,3 +39,5 @@ if not ADMIN_ID:
 
 if not XUI_API_TOKEN:
     raise RuntimeError("XUI_API_TOKEN is not set")
+
+# menu visuals are configured via .env
