@@ -663,7 +663,7 @@ async def admin_sub_minus(callback: CallbackQuery):
     state["device_limit"]=new_limit
     user=await get_user(state["tg_id"])
     if user:
-        client=get_client(email=user["email"])
+        client=find_client(user["email"])
         if client:
             data=client.get("client",client)
             rem=max(0,int(data.get("expiryTime",0))//1000-int(time.time()))
