@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 import time
 
 from aiogram import Bot, Dispatcher, BaseMiddleware
@@ -56,6 +57,33 @@ admin_action_waiting = {}
 user_action_waiting = {}
 purchase_selection = {}
 
+MENU_PHOTOS = [
+    "AgACAgIAAxkBAAIDlGq2rmZEjEOkJFoe1hsAAbSALQdmQAACRyRrG5snqUldG_wdjq9mswEAAwIAA3kAAz0E",
+    "AgACAgIAAxkBAAIDlmq2rmoO0Ya8Q7GEgoThyR-QmpAoAAJIJGsbmyepSTOPgBVl5TspAQADAgADeQADPQQ",
+    "AgACAgIAAxkBAAIDmGq2rnL6Q8GKB9cQ2w-2FBTHow2BAALXGmsbgJKxSTC6etz94ZTpAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDmmq2roCyU-GOe28I7aCWIT-7HM46AAJCJGsbmyepSREsrjLJ-WGwAQADAgADeQADPQQ",
+    "AgACAgIAAxkBAAIDnGq2sBYUWU6EoG9E3Ram31uL9OVfAAIhIWsbRWO4SR_R4V2WgQ_RAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDnWq2sBaIYSyVPZ0v1DFAJAEuKYZPAAIiIWsbRWO4SUoepsfddr-bAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDoGq2sGMJ2-RcOD2QRC9pJgMG-SoqAAIlIWsbRWO4SYOKa9QqWGgLAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDoWq2sGO7ojHFIMDAYAsmAsOr36-WAAImIWsbRWO4STCPF-WzAAF3-gEAAwIAA3cAAz0E",
+    "AgACAgIAAxkBAAIDpGq2sGP17POQVF0-xWtBDsKYejGqAAIqIWsbRWO4SbDklE3jGmgcAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDqWq2sGN7OLf7KZAaoG8EL0u0raYPAAIvIWsbRWO4SU7UA0JYiUo-AQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDp2q2sGM7LSR5aLCeKBS-Zyr4hnaIAAItIWsbRWO4Sci0WkubzlgjAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDpmq2sGNRuh0tJK-ocHJAxvKL1xsPAAIsIWsbRWO4SWB9UQ8akJnDAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDomq2sGPEQ1FHSK9i9jZf-FzP8LkOAAInIWsbRWO4Sb6hAZdG-15oAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDo2q2sGMSdCbgHixAF6pcfL-r97KeAAIpIWsbRWO4SYqgrfWwQG0yAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDpWq2sGO1J_ri9S_1lo9XThd8HzwtAAIrIWsbRWO4ScyxeWgmxMA4AQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDqGq2sGMNst0UwhI1a3aeSL3KBVqKAAIuIWsbRWO4SfkNU_PLtsOGAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDtGq2sIAN_7g61dgeHc4N3u2IriuOAAIxIWsbRWO4SSrhUC87lBOUAQADAgADeQADPQQ",
+    "AgACAgIAAxkBAAIDtmq2sIBT_pclshfYtNY4L8ZkH3UkAAIzIWsbRWO4Sb3uPzTaQBGMAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDtWq2sICS-Ugv8VITazMLbtmRz1YdAAIyIWsbRWO4SUkhBcHjoawVAQADAgADdwADPQQ",
+    "AgACAgIAAxkBAAIDt2q2sIBKcT81ak1w1I7Y1syCndemAAI0IWsbRWO4SQlhxkmxp4lnAQADAgADdwADPQQ",
+]
+
+
+def random_menu_photo():
+    return random.choice(MENU_PHOTOS)
+
 def menu_caption(text: str):
     if PREMIUM_EMOJI_ID:
         return Text(
@@ -67,11 +95,25 @@ def menu_caption(text: str):
 
 
 async def answer_menu(message: Message, text: str, reply_markup=None, photo: str = ""):
-    if photo:
-        kwargs = menu_caption(text)
-        await message.answer_photo(photo=photo, reply_markup=reply_markup, **kwargs)
-        return
-    await message.answer(text, reply_markup=reply_markup)
+    kwargs = menu_caption(text)
+    await message.answer_photo(
+        photo=random_menu_photo(),
+        reply_markup=reply_markup,
+        **kwargs,
+    )
+
+
+async def edit_menu(callback: CallbackQuery, text: str, reply_markup=None):
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    kwargs = menu_caption(text)
+    await callback.message.answer_photo(
+        photo=random_menu_photo(),
+        reply_markup=reply_markup,
+        **kwargs,
+    )
 
 
 class MaintenanceMiddleware(BaseMiddleware):
@@ -325,7 +367,7 @@ async def start_trial(callback: CallbackQuery):
         f"🆔 telegram id: `{tg_id}`\n"
         f"🔗 sub id: `{client['sub_id']}`",
     )
-    await callback.message.edit_text(
+    await edit_menu(callback, 
         "🎁 trial активирован!\n\n"
         "🔗 json-подписка:\n"
         f"{client['subscription_url']}\n\n"
