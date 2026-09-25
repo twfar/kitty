@@ -37,6 +37,7 @@ from rollypay import create_payment as rollypay_create_payment
 
 from xui import (
     create_client,
+    get_client,
     renew_client_by_sub_id,
     find_client,
     get_hwid_devices,
