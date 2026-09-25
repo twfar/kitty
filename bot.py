@@ -36,6 +36,7 @@ from xui import (
     ban_client_by_sub_id,
     find_client,
     get_inbounds,
+    get_client,
     get_hwid_devices,
     delete_all_hwid_devices,
 )
@@ -184,7 +185,9 @@ async def send_subscription_info(message: Message, user):
         return
 
     client = data["client"]
-    limit = client.get("limitHwid", 0)
+    client_info = get_client(email=user["email"])
+    client_data = client_info.get("client", client_info) if client_info else {}
+    limit = client_data.get("limitHwid", 0)
 
     try:
         used = len(get_hwid_devices(user["email"]))
@@ -322,7 +325,9 @@ async def devices(callback: CallbackQuery):
         logging.exception("failed to get hwid devices")
         await callback.answer("ошибка получения устройств", show_alert=True)
         return
-    limit = client.get("limitHwid", 0)
+    client_info = get_client(email=user["email"])
+    client_data = client_info.get("client", client_info) if client_info else {}
+    limit = client_data.get("limitHwid", 0)
     text = "\n".join(f"• {d.get('deviceModel') or 'неизвестное устройство'}" for d in device_list) if device_list else "нет зарегистрированных устройств"
     await callback.answer()
     await callback.message.edit_text(
