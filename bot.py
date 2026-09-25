@@ -46,54 +46,6 @@ from xui import (
 
 dp = Dispatcher()
 
-async def check_channel_subscription(bot: Bot, user_id: int) -> bool:
-    try:
-        member = await bot.get_chat_member(CHANNEL, user_id)
-        return member.status in ("member", "administrator", "creator")
-    except Exception:
-        logging.exception("failed to check channel subscription")
-        return False
-
-
-async def require_channel_subscription(callback: CallbackQuery) -> bool:
-    if callback.from_user.id == ADMIN_ID:
-        return True
-
-    if await check_channel_subscription(callback.bot, callback.from_user.id):
-        return True
-
-    await callback.answer("сначала подпишись на канал", show_alert=True)
-    await edit_menu(
-        callback.message,
-        "📢 чтобы пользоваться ботом, подпишись на канал kitty vpn.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="📢 подписаться на канал",
-                url="https://t.me/kittyvpnoff",
-                style=ButtonStyle.PRIMARY,
-            )],
-            [InlineKeyboardButton(
-                text="✅ я подписался",
-                callback_data="check_subscription",
-                style=ButtonStyle.SUCCESS,
-            )],
-        ]),
-    )
-    return False
-
-
-class ChannelSubscriptionMiddleware(BaseMiddleware):
-    async def __call__(self, handler, event, data):
-        if isinstance(event, CallbackQuery):
-            if event.data == "check_subscription":
-                return await handler(event, data)
-            if not await require_channel_subscription(event):
-                return
-        return await handler(event, data)
-
-
-dp.callback_query.outer_middleware(ChannelSubscriptionMiddleware())
-
 BOT_VERSION = "1.0.8"
 
 ADMIN_URL = "https://t.me/kittyvpnoff?direct"
@@ -392,37 +344,11 @@ async def kitty_admin(message: Message):
     await message.answer("⚙️ админ-панель\n\nвыбери действие:", reply_markup=admin_keyboard())
 
 
-@dp.callback_query(lambda c: c.data == "check_subscription")
-async def check_subscription(callback: CallbackQuery):
-    if await check_channel_subscription(callback.bot, callback.from_user.id):
-        await callback.answer("подписка подтверждена")
-        user = await get_user(callback.from_user.id)
-        if user:
-            await edit_menu(
-                callback.message,
-                "главное меню",
-                reply_markup=main_keyboard(),
-            )
-        else:
-            await edit_menu(
-                callback.message,
-                "привет 👋\n\n"
-                "добро пожаловать в kitty vpn 🐈\n\n"
-                f"📢 канал: {CHANNEL}\n\n"
-                f"🎁 тестовый доступ на {TRIAL_HOURS} часов.",
-                reply_markup=trial_keyboard(),
-            )
-        return
-
-    await callback.answer("подписка не найдена", show_alert=True)
-
-
 @dp.callback_query(lambda c: c.data == "start_trial")
 async def start_trial(callback: CallbackQuery):
     tg_id = callback.from_user.id
     username = callback.from_user.username or "unknown"
     user = await get_user(tg_id)
-
     if user and find_client(user["email"]):
         await callback.answer("у тебя уже есть активная подписка", show_alert=True)
         await send_subscription_info(callback.message, user)
