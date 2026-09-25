@@ -356,7 +356,7 @@ def renew_client_by_sub_id(sub_id, days=30, device_limit=3):
     return updated
 
 def edit_client_subscription(email, device_limit, days, hours, minutes):
-    client = get_client(email=email)
+    client = find_client(email)
     if not client:
         raise RuntimeError("subscription not found")
     client_data = client.get("client", client)
