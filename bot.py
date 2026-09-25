@@ -33,13 +33,9 @@ from rollypay import create_payment as rollypay_create_payment
 from xui import (
     create_client,
     renew_client_by_sub_id,
-    ban_client_by_sub_id,
     find_client,
-    get_inbounds,
-    get_client,
     get_hwid_devices,
     delete_all_hwid_devices,
-    edit_client_subscription,
 )
 
 dp = Dispatcher()
@@ -55,7 +51,6 @@ OFFER_URL = "https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15"
 admin_action_waiting = {}
 user_action_waiting = {}
 purchase_selection = {}
-admin_subscription = {}
 
 
 class MaintenanceMiddleware(BaseMiddleware):
@@ -117,7 +112,6 @@ def trial_keyboard():
 
 def admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🛠 редактор подписки", callback_data="admin_subscription_editor", style=ButtonStyle.PRIMARY)],
         [InlineKeyboardButton(text="🎟 создать промокод", callback_data="admin_create_promo")],
         [InlineKeyboardButton(text="🔧 технические работы", callback_data="admin_maintenance")],
     ])
@@ -616,95 +610,6 @@ async def promo(callback: CallbackQuery):
     )
 
 
-@dp.callback_query(lambda c: c.data == "admin_subscription_editor")
-async def admin_subscription_editor(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        await callback.answer("доступ запрещён", show_alert=True)
-        return
-    admin_action_waiting[callback.from_user.id] = "subscription_user"
-    await callback.answer()
-    await callback.message.edit_text(
-        "🛠 редактор подписки\n\nотправь telegram id пользователя.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
-        ]),
-    )
-
-async def show_admin_subscription(callback: CallbackQuery):
-    state = admin_subscription.get(callback.from_user.id)
-    if not state:
-        await callback.message.edit_text("❌ подписка не выбрана.", reply_markup=admin_keyboard())
-        return
-    user = await get_user(state["tg_id"])
-    client = get_client(email=user["email"]) if user else None
-    if not user or not client:
-        await callback.message.edit_text("❌ подписка не найдена.", reply_markup=admin_keyboard())
-        return
-    data = client.get("client", client)
-    limit = int(data.get("limitHwid", 1))
-    state["device_limit"] = limit
-    expires_at = int(data.get("expiryTime", 0)) // 1000
-    await callback.message.edit_text(
-        "🛠 редактор подписки\n\n"
-        f"👤 telegram id: `{state['tg_id']}`\n"
-        f"📱 лимит hwid: {limit}\n"
-        f"⏳ осталось: {format_remaining(expires_at)}\n\n"
-        "изменение лимита — кнопками ниже.\n"
-        "срок задаётся сообщением в формате: `дни часы минуты`.",
-        reply_markup=admin_subscription_keyboard(limit),
-    )
-
-@dp.callback_query(lambda c: c.data == "admin_sub_minus")
-async def admin_sub_minus(callback: CallbackQuery):
-    state=admin_subscription.get(callback.from_user.id)
-    if not state:
-        await callback.answer("подписка не выбрана", show_alert=True); return
-    new_limit=max(1,int(state.get("device_limit",1))-1)
-    state["device_limit"]=new_limit
-    user=await get_user(state["tg_id"])
-    if user:
-        client=find_client(user["email"])
-        if client:
-            data=client.get("client",client)
-            rem=max(0,int(data.get("expiryTime",0))//1000-int(time.time()))
-            d,r=divmod(rem,86400); h,m=divmod(r,3600); mi=m//60
-            edit_client_subscription(user["email"],new_limit,d,h,mi)
-    await callback.answer()
-    await show_admin_subscription(callback)
-
-@dp.callback_query(lambda c: c.data == "admin_sub_plus")
-async def admin_sub_plus(callback: CallbackQuery):
-    state=admin_subscription.get(callback.from_user.id)
-    if not state:
-        await callback.answer("подписка не выбрана", show_alert=True); return
-    new_limit=min(10,int(state.get("device_limit",1))+1)
-    state["device_limit"]=new_limit
-    user=await get_user(state["tg_id"])
-    if user:
-        client=find_client(user["email"])
-        if client:
-            data=client.get("client",client)
-            rem=max(0,int(data.get("expiryTime",0))//1000-int(time.time()))
-            d,r=divmod(rem,86400); h,m=divmod(r,3600); mi=m//60
-            edit_client_subscription(user["email"],new_limit,d,h,mi)
-    await callback.answer()
-    await show_admin_subscription(callback)
-
-@dp.callback_query(lambda c: c.data == "admin_sub_value")
-async def admin_sub_value(callback: CallbackQuery):
-    await callback.answer("лимит от 1 до 10 устройств", show_alert=True)
-
-@dp.callback_query(lambda c: c.data == "admin_sub_time")
-async def admin_sub_time(callback: CallbackQuery):
-    admin_action_waiting[callback.from_user.id]="subscription_time"
-    await callback.answer()
-    await callback.message.edit_text(
-        "⏱ изменение срока подписки\n\nотправь остаток в формате:\n`дни часы минуты`",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
-        ]),
-    )
-
 @dp.callback_query(lambda c: c.data == "admin_maintenance")
 async def admin_maintenance(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -793,7 +698,6 @@ async def admin_back(callback: CallbackQuery):
         await callback.answer("доступ запрещён", show_alert=True)
         return
     admin_action_waiting.pop(callback.from_user.id, None)
-    admin_subscription.pop(callback.from_user.id, None)
     await callback.answer()
     await callback.message.edit_text("⚙️ админ-панель\n\nвыбери действие:", reply_markup=admin_keyboard())
 
@@ -867,60 +771,6 @@ async def admin_message_handler(message: Message):
 
     action = admin_action_waiting.get(message.from_user.id)
     if not action:
-        return
-
-    if action == "subscription_user":
-        try:
-            tg_id=int(text)
-        except ValueError:
-            await message.answer("❌ telegram id должен быть числом.")
-            return
-        user=await get_user(tg_id)
-        if not user:
-            await message.answer("❌ пользователь не найден.")
-            return
-        client=get_client(email=user["email"])
-        if not client:
-            await message.answer("❌ подписка не найдена.")
-            return
-        admin_subscription[message.from_user.id]={"tg_id":tg_id,"device_limit":int(client.get("client",client).get("limitHwid",1))}
-        admin_action_waiting.pop(message.from_user.id,None)
-        data=client.get("client",client)
-        await message.answer(
-            "🛠 редактор подписки\n\n"
-            f"👤 telegram id: {tg_id}\n"
-            f"📱 лимит hwid: {data.get('limitHwid', 1)}\n"
-            f"⏳ осталось: {format_remaining(int(data.get("expiryTime",0))//1000)}",
-            reply_markup=admin_subscription_keyboard(int(data.get("limitHwid",1))),
-        )
-        return
-
-    if action == "subscription_time":
-        parts=text.split()
-        if len(parts)!=3:
-            await message.answer("❌ формат: `дни часы минуты`")
-            return
-        try:
-            days,hours,minutes=map(int,parts)
-            if days<0 or not 0<=hours<=23 or not 0<=minutes<=59:
-                raise ValueError
-        except ValueError:
-            await message.answer("❌ дни ≥ 0, часы 0–23, минуты 0–59.")
-            return
-        state=admin_subscription.get(message.from_user.id)
-        if not state:
-            await message.answer("❌ подписка не выбрана.",reply_markup=admin_keyboard()); return
-        user=await get_user(state["tg_id"])
-        if not user:
-            await message.answer("❌ пользователь не найден.",reply_markup=admin_keyboard()); return
-        try:
-            edit_client_subscription(user["email"],int(state["device_limit"]),days,hours,minutes)
-        except Exception as e:
-            logging.exception("failed to edit subscription")
-            await message.answer(f"❌ ошибка изменения подписки:\n`{e}`")
-            return
-        admin_action_waiting.pop(message.from_user.id,None)
-        await message.answer("✅ срок подписки изменён.",reply_markup=admin_subscription_keyboard(int(state["device_limit"])))
         return
 
     if action == "maintenance_message":
