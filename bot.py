@@ -32,6 +32,7 @@ from db import (
     create_payment,
     get_setting,
     set_setting,
+    delete_user_data,
 )
 from rollypay import create_payment as rollypay_create_payment
 
@@ -47,6 +48,8 @@ from xui import (
 dp = Dispatcher()
 
 BOT_VERSION = "1.0.8"
+TRIAL_DURATION_HOURS = 24
+TEST_USER_TG_ID = 8772456974
 
 ADMIN_URL = "https://t.me/kittyvpnoff?direct"
 SUPPORT_URL = "https://t.me/kittyvpn_support_robot"
@@ -174,6 +177,14 @@ def subscription_keyboard(subscription_url: str):
     ])
 
 
+def welcome_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📢 подписаться", url="https://t.me/kittyvpnoff", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton(text="✅ проверить подписку", callback_data="check_trial_subscription", style=ButtonStyle.SUCCESS)],
+        [InlineKeyboardButton(text="💳 купить подписку", callback_data="purchase")],
+    ])
+
+
 def trial_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎁 начать trial", callback_data="start_trial", style=ButtonStyle.PRIMARY)],
@@ -185,6 +196,7 @@ def admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎟 создать промокод", callback_data="admin_create_promo")],
         [InlineKeyboardButton(text="🔧 технические работы", callback_data="admin_maintenance")],
+        [InlineKeyboardButton(text="🗑 очистить тестовый аккаунт", callback_data="admin_clear_test_user")],
     ])
 
 def admin_subscription_keyboard(limit):
@@ -297,7 +309,7 @@ async def start(message: Message):
         except Exception:
             logging.exception("failed to notify admin about /start")
 
-    if user:
+    if user and user["status"] != "pending":
         await answer_menu(
             message,
             "главное меню",
@@ -308,11 +320,15 @@ async def start(message: Message):
 
     await answer_menu(
         message,
-        "привет 👋\n\n"
-        "добро пожаловать в kitty vpn 🐈\n\n"
-        f"📢 канал: {CHANNEL}\n\n"
-        f"🎁 тестовый доступ на {TRIAL_HOURS} часов.",
-        reply_markup=trial_keyboard(),
+        "привет это kitty vpn!\n\n"
+        "мы имеем:\n"
+        "крутые фото котиков\n"
+        "интернет без блокировок\n"
+        "низкую цену\n\n"
+        "предлагаю выбор:\n"
+        "ты подписываешься на наш канал и мы даем тебе бесплатно 1 день\n"
+        "ты просто покупаешь доступ к нашему впн",
+        reply_markup=welcome_keyboard(),
         photo=TRIAL_MENU_PHOTO,
     )
 
@@ -344,39 +360,59 @@ async def kitty_admin(message: Message):
     await message.answer("⚙️ админ-панель\n\nвыбери действие:", reply_markup=admin_keyboard())
 
 
-@dp.callback_query(lambda c: c.data == "start_trial")
-async def start_trial(callback: CallbackQuery):
+async def grant_trial(callback: CallbackQuery):
     tg_id = callback.from_user.id
     username = callback.from_user.username or "unknown"
     user = await get_user(tg_id)
-    if user and find_client(user["email"]):
-        await callback.answer("у тебя уже есть активная подписка", show_alert=True)
-        await send_subscription_info(callback.message, user)
+
+    if user and user["status"] in ("trial", "paid"):
+        await callback.answer("у тебя уже есть подписка", show_alert=True)
+        if user["sub_id"]:
+            await send_subscription_info(callback.message, user)
         return
-    await callback.answer("создаю trial...")
+
     email = f"tg_{tg_id}"
-    client = create_client(tg_id=tg_id, email=email, expiry_hours=TRIAL_HOURS, group="trial")
+    if find_client(email):
+        await callback.answer("trial уже был создан", show_alert=True)
+        return
+
+    await callback.answer("создаю trial...")
+    client = create_client(
+        tg_id=tg_id,
+        email=email,
+        expiry_hours=TRIAL_DURATION_HOURS,
+        group="trial",
+    )
+
     created_at = int(time.time())
     expires_at = client["expiry_time"] // 1000
     values = dict(
-        tg_id=tg_id, username=username, email=email, sub_id=client["sub_id"],
-        subscription_url=client["subscription_url"], status="trial",
-        created_at=created_at, expires_at=expires_at,
+        tg_id=tg_id,
+        username=username,
+        email=email,
+        sub_id=client["sub_id"],
+        subscription_url=client["subscription_url"],
+        status="trial",
+        created_at=created_at,
+        expires_at=expires_at,
     )
+
     if user:
         await update_user(**values)
     else:
         await create_user(**values)
-    admin_username = f"@{callback.from_user.username}" if callback.from_user.username else "—"
+
     await callback.bot.send_message(
         ADMIN_ID,
         "🎁 подключён trial\n\n"
-        f"👤 username: {admin_username}\n"
-        f"🆔 telegram id: `{tg_id}`\n"
-        f"🔗 sub id: `{client['sub_id']}`",
+        f"👤 username: {username}\n"
+        f"🆔 telegram id: {tg_id}\n"
+        f"🔗 sub id: {client['sub_id']}",
     )
-    await edit_menu(callback.message, 
-        "🎁 trial активирован!\n\n"
+
+    await edit_menu(
+        callback.message,
+        "🎁 trial активирован на 24 часа!\n\n"
         "🔗 json-подписка:\n"
         f"{client['subscription_url']}\n\n"
         "добавь эту ссылку в happ или другой поддерживаемый vpn-клиент.",
@@ -384,11 +420,55 @@ async def start_trial(callback: CallbackQuery):
     )
 
 
+@dp.callback_query(lambda c: c.data == "check_trial_subscription")
+async def check_trial_subscription(callback: CallbackQuery):
+    try:
+        member = await callback.bot.get_chat_member(CHANNEL, callback.from_user.id)
+        subscribed = member.status in ("member", "administrator", "creator")
+    except Exception:
+        logging.exception("failed to check channel subscription")
+        subscribed = False
+
+    if not subscribed:
+        await callback.answer("ты ещё не подписан на канал", show_alert=True)
+        return
+
+    await grant_trial(callback)
+
+
+@dp.callback_query(lambda c: c.data == "start_trial")
+async def start_trial(callback: CallbackQuery):
+    try:
+        member = await callback.bot.get_chat_member(CHANNEL, callback.from_user.id)
+        subscribed = member.status in ("member", "administrator", "creator")
+    except Exception:
+        logging.exception("failed to check channel subscription")
+        subscribed = False
+
+    if not subscribed:
+        await callback.answer("сначала подпишись на канал", show_alert=True)
+        return
+
+    await grant_trial(callback)
+
+
 @dp.callback_query(lambda c: c.data == "subscription")
 async def subscription(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
-    if not user:
-        await callback.answer("сначала получи trial", show_alert=True)
+    if not user or not user["sub_id"]:
+        await callback.answer()
+        await edit_menu(
+            callback.message,
+            "привет это kitty vpn!\n\n"
+            "мы имеем:\n"
+            "крутые фото котиков\n"
+            "интернет без блокировок\n"
+            "низкую цену\n\n"
+            "предлагаю выбор:\n"
+            "ты подписываешься на наш канал и мы даем тебе бесплатно 1 день\n"
+            "ты просто покупаешь доступ к нашему впн",
+            reply_markup=welcome_keyboard(),
+        )
         return
     await callback.answer()
     await send_subscription_info(callback.message, user)
@@ -467,8 +547,8 @@ async def back_to_menu(callback: CallbackQuery):
 async def purchase(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
 
-    if not user or not user["sub_id"]:
-        await callback.answer("сначала получи trial", show_alert=True)
+    if user and user["status"] in ("trial", "paid") and not user["sub_id"]:
+        await callback.answer("профиль повреждён, напиши в поддержку", show_alert=True)
         return
 
     purchase_selection[callback.from_user.id] = {
@@ -606,10 +686,43 @@ async def purchase_confirm(callback: CallbackQuery):
 
     amount = purchase_price(devices, months)
     days = months * 30
+    user = await get_user(callback.from_user.id)
 
     await callback.answer("создаю платёж...")
 
     try:
+        if not user:
+            tg_id = callback.from_user.id
+            username = callback.from_user.username or "unknown"
+            email = f"tg_{tg_id}"
+            client = find_client(email)
+
+            if not client:
+                created = create_client(
+                    tg_id=tg_id,
+                    email=email,
+                    expiry_hours=1,
+                    group="paid",
+                )
+                disable_client(email)
+                client = find_client(email) or created
+
+            client_data = client.get("client", client)
+            sub_id = client_data.get("subId") or client.get("sub_id")
+            subscription_url = f"https://87.121.82.175:2096/jsnn/{sub_id}"
+
+            await create_user(
+                tg_id=tg_id,
+                username=username,
+                email=email,
+                sub_id=sub_id,
+                subscription_url=subscription_url,
+                status="pending",
+                created_at=int(time.time()),
+                expires_at=int(client_data.get("expiryTime") or 0) // 1000,
+            )
+            user = await get_user(tg_id)
+
         payment = await rollypay_create_payment(
             api_key=ROLLYPAY_API_KEY,
             amount=amount,
@@ -695,6 +808,36 @@ async def promo(callback: CallbackQuery):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")]
         ]),
+    )
+
+
+@dp.callback_query(lambda c: c.data == "admin_clear_test_user")
+async def admin_clear_test_user(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    await callback.answer("очищаю аккаунт...")
+
+    try:
+        delete_client_by_tg_id(TEST_USER_TG_ID)
+    except Exception:
+        logging.exception("failed to delete test user's 3x-ui client")
+        await edit_menu(
+            callback.message,
+            "❌ не удалось удалить VPN-подписку тестового аккаунта.",
+            reply_markup=admin_keyboard(),
+        )
+        return
+
+    await delete_user_data(TEST_USER_TG_ID)
+
+    await edit_menu(
+        callback.message,
+        "✅ тестовый аккаунт очищен.\n\n"
+        f"telegram id: {TEST_USER_TG_ID}\n"
+        "данные бота, платежи и VPN-подписка удалены.",
+        reply_markup=admin_keyboard(),
     )
 
 
