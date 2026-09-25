@@ -408,8 +408,7 @@ def purchase_selection_keyboard(devices: int):
 
 
 def purchase_months_keyboard(devices: int, months: int):
-    monthly_price = 80 + (devices - 3) * 50
-    total = monthly_price if months == 1 else int(monthly_price * 3 * 70 / 80)
+    total = purchase_price(devices, months)
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="1 месяц", callback_data="purchase_months_1"),
@@ -432,12 +431,12 @@ async def update_purchase_selection(callback: CallbackQuery, devices: int, month
             reply_markup=purchase_selection_keyboard(devices),
         )
         return
-    total = monthly_price if months == 1 else int(monthly_price * 3 * 70 / 80)
+    total = purchase_price(devices, months)
     await callback.message.edit_text(
         "💳 покупка подписки\n\n"
         f"📱 устройств: {devices}\n"
         f"📅 срок: {months} {'месяц' if months == 1 else 'месяца'}\n"
-        f"💰 цена: {total} ₽\n\n"
+        f"💰 цена: {format_price(total)} ₽\n\n"
         "выбери срок:",
         reply_markup=purchase_months_keyboard(devices, months),
     )
