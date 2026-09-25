@@ -646,7 +646,7 @@ async def show_admin_subscription(callback: CallbackQuery):
     expires_at = int(data.get("expiryTime", 0)) // 1000
     await callback.message.edit_text(
         "🛠 редактор подписки\n\n"
-        f"👤 telegram id: `{state["tg_id"]}`\n"
+        f"👤 telegram id: `{state['tg_id']}`\n"
         f"📱 лимит hwid: {limit}\n"
         f"⏳ осталось: {format_remaining(expires_at)}\n\n"
         "изменение лимита — кнопками ниже.\n"
