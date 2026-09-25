@@ -4,7 +4,7 @@ import aiohttp
 BASE_URL = "https://rollypay.io"
 
 
-async def create_payment(api_key, amount, tg_id, days, test):
+async def create_payment(api_key, amount, tg_id, days, test, devices=3, months=1):
     order_id = f"kitty_{tg_id}_{uuid.uuid4().hex[:12]}"
     payload = {
         "amount": f"{amount:.2f}",
@@ -14,6 +14,8 @@ async def create_payment(api_key, amount, tg_id, days, test):
         "metadata": {
             "tg_id": str(tg_id),
             "days": str(days),
+            "devices": str(devices),
+            "months": str(months),
         },
         "test": test,
     }
