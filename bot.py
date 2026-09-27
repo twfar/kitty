@@ -238,21 +238,40 @@ def format_remaining(expires_at: int) -> str:
 
 
 async def get_subscription_data(user):
-    client = find_client(user["email"])
+    # сначала ищем по telegram id — это надёжнее, чем старый email из базы.
+    client = get_client(tg_id=user["tg_id"])
+
+    # если по tg_id не нашли, пробуем старый email для совместимости.
+    if not client:
+        client = find_client(user["email"])
+
     if not client:
         return None
-    sub_id = client.get("subId")
-    expiry_time = client.get("expiryTime")
+
+    client_data = client.get("client", client)
+    email = client_data.get("email") or client.get("email") or user["email"]
+    sub_id = client_data.get("subId") or client.get("subId")
+    expiry_time = client_data.get("expiryTime") or client.get("expiryTime")
+
     if not sub_id or not expiry_time:
         return None
+
     subscription_url = f"https://87.121.82.175:2096/jsnn/{sub_id}"
     expires_at = int(expiry_time) // 1000
+
+    # синхронизируем данные бота с найденным клиентом 3x-ui.
     await update_user(
-        tg_id=user["tg_id"], username=user["username"], email=user["email"],
+        tg_id=user["tg_id"], username=user["username"], email=email,
         sub_id=sub_id, subscription_url=subscription_url, status=user["status"],
         created_at=user["created_at"], expires_at=expires_at,
     )
-    return {"subscription_url": subscription_url, "expires_at": expires_at, "client": client}
+
+    return {
+        "subscription_url": subscription_url,
+        "expires_at": expires_at,
+        "client": client,
+        "email": email,
+    }
 
 
 async def send_subscription_info(message: Message, user):
@@ -268,12 +287,13 @@ async def send_subscription_info(message: Message, user):
         return
 
     client = data["client"]
-    client_info = get_client(email=user["email"])
+    client_email = data["email"]
+    client_info = get_client(email=client_email)
     client_data = client_info.get("client", client_info) if client_info else {}
     limit = client_data.get("limitHwid", 0)
 
     try:
-        used = len(get_hwid_devices(user["email"]))
+        used = len(get_hwid_devices(client_email))
     except Exception:
         used = 0
 
@@ -491,17 +511,19 @@ async def devices(callback: CallbackQuery):
     if not user:
         await callback.answer("сначала получи trial", show_alert=True)
         return
-    client = find_client(user["email"])
+    client = get_client(tg_id=callback.from_user.id) or find_client(user["email"])
     if not client:
         await callback.answer("подписка не найдена", show_alert=True)
         return
+    client_data = client.get("client", client)
+    client_email = client_data.get("email") or client.get("email") or user["email"]
     try:
-        device_list = get_hwid_devices(user["email"])
+        device_list = get_hwid_devices(client_email)
     except Exception:
         logging.exception("failed to get hwid devices")
         await callback.answer("ошибка получения устройств", show_alert=True)
         return
-    client_info = get_client(email=user["email"])
+    client_info = get_client(email=client_email)
     client_data = client_info.get("client", client_info) if client_info else {}
     limit = client_data.get("limitHwid", 0)
     text = "\n".join(f"• {d.get('deviceModel') or 'неизвестное устройство'}" for d in device_list) if device_list else "нет зарегистрированных устройств"
