@@ -1315,6 +1315,16 @@ async def main():
     logging.basicConfig(level=logging.INFO)
     await init_db()
     bot = Bot(token=BOT_TOKEN)
+    try:
+        started_at = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+        await bot.send_message(
+            ADMIN_ID,
+            "🟢 бот запущен\\n\\n"
+            f"🕐 время запуска: {started_at}",
+        )
+    except Exception:
+        logging.exception("failed to notify admin about bot startup")
+
     worker_task = asyncio.create_task(notifications_worker(bot))
     try:
         await dp.start_polling(bot)
