@@ -166,11 +166,14 @@ dp.callback_query.outer_middleware(MaintenanceMiddleware())
 def main_keyboard(referral_count=0):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔗 подписка", callback_data="subscription", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton(text="📢 наш канал", url="https://t.me/kittyvpnoff")],
-        [InlineKeyboardButton(text=f"👥 рефералы — {referral_count}", callback_data="referrals")],
-        [InlineKeyboardButton(text="🎟 промокод", callback_data="promo")],
-        [InlineKeyboardButton(text="🆘 поддержка", callback_data="support")],
-        [InlineKeyboardButton(text="ℹ️ о сервисе", callback_data="about_service")],
+        [
+            InlineKeyboardButton(text="👥 рефералы", callback_data="referrals"),
+            InlineKeyboardButton(text="🎟 промокод", callback_data="promo"),
+        ],
+        [
+            InlineKeyboardButton(text="🆘 поддержка", callback_data="support"),
+            InlineKeyboardButton(text="ℹ️ инфо", callback_data="about_service"),
+        ],
     ])
 
 
@@ -365,7 +368,10 @@ async def start(message: Message):
         stats = await get_referral_stats(message.from_user.id)
         await answer_menu(
             message,
-            "главное меню",
+            "главное меню kitty vpn
+
+"
+            "наш канал — @kittyvpnoff",
             reply_markup=main_keyboard(stats["total"]),
             photo=MAIN_MENU_PHOTO,
         )
@@ -601,7 +607,10 @@ async def back_to_subscription(callback: CallbackQuery):
 async def back_to_menu(callback: CallbackQuery):
     await callback.answer()
     await edit_menu(callback.message, 
-        "🐈 главное меню",
+        "главное меню kitty vpn
+
+"
+        "наш канал — @kittyvpnoff",
         reply_markup=main_keyboard(),
     )
 
