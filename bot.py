@@ -2,6 +2,7 @@ import asyncio
 import logging
 import random
 import time
+from datetime import datetime
 
 from aiogram import Bot, Dispatcher, BaseMiddleware
 from aiogram.filters import Command, CommandStart
@@ -35,6 +36,11 @@ from db import (
     delete_user_data,
     create_referral,
     get_referral_stats,
+    get_active_users,
+    notification_was_sent,
+    mark_notification_sent,
+    get_device_snapshots,
+    save_device_snapshot,
 )
 from rollypay import create_payment as rollypay_create_payment
 
@@ -328,7 +334,18 @@ async def start(message: Message):
         try:
             referrer_id = int(payload[4:])
             if referrer_id != message.from_user.id:
-                await create_referral(referrer_id, message.from_user.id)
+                created_referral = await create_referral(referrer_id, message.from_user.id)
+                if created_referral:
+                    try:
+                        await message.bot.send_message(
+                            referrer_id,
+                            "👥 по твоей реферальной ссылке перешёл новый пользователь!
+
+"
+                            "если он оплатит подписку, ты получишь реферальные дни.",
+                        )
+                    except Exception:
+                        logging.exception("failed to notify referrer about referral click")
         except (TypeError, ValueError):
             logging.warning("invalid referral payload: %s", payload)
 
@@ -1157,13 +1174,158 @@ async def admin_message_handler(message: Message):
 
 
 
+
+async def notifications_worker(bot: Bot):
+    while True:
+        try:
+            now = int(time.time())
+            users = await get_active_users()
+
+            for user in users:
+                tg_id = user["tg_id"]
+                expires_at = int(user["expires_at"] or 0)
+                remaining = expires_at - now
+
+                # триал: уведомление за 3 часа до окончания.
+                if user["status"] == "trial" and 0 < remaining <= 3 * 3600:
+                    if not await notification_was_sent(tg_id, "trial_soon", expires_at):
+                        try:
+                            await bot.send_message(
+                                tg_id,
+                                "⏳ твой trial скоро закончится.\n\n"
+                                "осталось меньше 3 часов.\n"
+                                "хочешь продолжить пользоваться kitty vpn — купи подписку.",
+                                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                    [InlineKeyboardButton(text="💳 купить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
+                                ]),
+                            )
+                            await mark_notification_sent(tg_id, "trial_soon", expires_at)
+                        except Exception:
+                            logging.exception("failed to send trial reminder")
+
+                if user["status"] == "paid" and remaining > 0:
+                    # если до конца <= часа, отправляем и суточное, если оно ещё не ушло.
+                    if remaining <= 24 * 3600:
+                        if not await notification_was_sent(tg_id, "subscription_day", expires_at):
+                            try:
+                                await bot.send_message(
+                                    tg_id,
+                                    "⏳ подписка закончится в ближайшие сутки.\n\n"
+                                    "продли её заранее, чтобы не потерять доступ.",
+                                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                        [InlineKeyboardButton(text="💳 продлить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
+                                    ]),
+                                )
+                                await mark_notification_sent(tg_id, "subscription_day", expires_at)
+                            except Exception:
+                                logging.exception("failed to send day subscription reminder")
+
+                    if remaining <= 3600:
+                        if not await notification_was_sent(tg_id, "subscription_hour", expires_at):
+                            try:
+                                await bot.send_message(
+                                    tg_id,
+                                    "⚠️ подписка закончится примерно через час.\n\n"
+                                    "продли её сейчас, чтобы vpn продолжил работать без перерыва.",
+                                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                        [InlineKeyboardButton(text="💳 продлить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
+                                    ]),
+                                )
+                                await mark_notification_sent(tg_id, "subscription_hour", expires_at)
+                            except Exception:
+                                logging.exception("failed to send hour subscription reminder")
+
+                if remaining <= 0:
+                    if not await notification_was_sent(tg_id, "subscription_expired", expires_at):
+                        try:
+                            await bot.send_message(
+                                tg_id,
+                                "❌ срок подписки закончился.\n\n"
+                                "купи новую подписку, чтобы снова пользоваться kitty vpn.",
+                                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                    [InlineKeyboardButton(text="💳 купить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
+                                ]),
+                            )
+                            await mark_notification_sent(tg_id, "subscription_expired", expires_at)
+                        except Exception:
+                            logging.exception("failed to send expiration notification")
+
+                # отслеживаем новые HWID-устройства.
+                try:
+                    client = get_client(tg_id=tg_id)
+                    if client:
+                        client_data = client.get("client", client)
+                        email = client_data.get("email") or user["email"]
+                        devices = get_hwid_devices(email)
+                        snapshots = await get_device_snapshots(tg_id)
+                        known = {row["device_key"] for row in snapshots}
+
+                        for device in devices:
+                            key = str(
+                                device.get("fingerprint")
+                                or device.get("hwid")
+                                or device.get("id")
+                                or ""
+                            )
+                            if not key or key in known:
+                                continue
+
+                            name = (
+                                device.get("deviceModel")
+                                or device.get("deviceOs")
+                                or device.get("userAgent")
+                                or "неизвестное устройство"
+                            )
+                            first_seen = int(
+                                device.get("firstSeen")
+                                or device.get("firstSeenAt")
+                                or now
+                            )
+                            if first_seen > 10_000_000_000:
+                                first_seen //= 1000
+
+                            # первая синхронизация не должна спамить старыми устройствами.
+                            if not snapshots:
+                                await save_device_snapshot(tg_id, key, name, first_seen)
+                                known.add(key)
+                                continue
+
+                            await save_device_snapshot(tg_id, key, name, first_seen)
+                            known.add(key)
+
+                            dt = datetime.fromtimestamp(first_seen).strftime("%d.%m.%Y %H:%M")
+                            await bot.send_message(
+                                tg_id,
+                                "📱 подключено новое устройство!\n\n"
+                                f"устройство: {name}\n"
+                                f"подключение: {dt}\n\n"
+                                "если это не ты — проверь список устройств.",
+                                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                                    [InlineKeyboardButton(text="📱 открыть устройства", callback_data="devices", style=ButtonStyle.PRIMARY)],
+                                ]),
+                            )
+                except Exception:
+                    logging.exception("failed to check devices")
+
+        except Exception:
+            logging.exception("notification worker failed")
+
+        await asyncio.sleep(60)
+
+
 async def main():
     logging.basicConfig(level=logging.INFO)
     await init_db()
     bot = Bot(token=BOT_TOKEN)
+    worker_task = asyncio.create_task(notifications_worker(bot))
     try:
         await dp.start_polling(bot)
     finally:
+        worker_task.cancel()
+        try:
+            await worker_task
+        except asyncio.CancelledError:
+            pass
         await bot.session.close()
 
 
