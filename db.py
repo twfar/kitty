@@ -462,3 +462,5 @@ async def mark_referral_rewards_applied(payment_ids):
             tuple(payment_ids),
         )
         await db.commit()
+
+# notifications
