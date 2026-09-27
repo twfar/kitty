@@ -3,6 +3,7 @@ import hmac
 import json
 import logging
 import ssl
+import time
 
 from aiohttp import web
 from aiogram import Bot
@@ -13,8 +14,11 @@ from db import (
     update_payment_status,
     get_user,
     update_user,
+    register_referral_payment,
+    get_pending_referral_rewards,
+    mark_referral_rewards_applied,
 )
-from xui import renew_client_by_sub_id
+from xui import renew_client_by_sub_id, add_days_to_client_by_sub_id, get_client
 
 
 def verify_signature(raw_body, timestamp, signature, secret):
@@ -154,11 +158,62 @@ async def webhook(request):
 
     await update_payment_status(payment_id, "paid")
 
+    try:
+        reward = await register_referral_payment(payment_id, payment["tg_id"])
+        if reward:
+            referrer = await get_user(reward["referrer_id"])
+            applied = False
+            if referrer and referrer["sub_id"]:
+                referrer_client = get_client(tg_id=reward["referrer_id"])
+                referrer_data = referrer_client.get("client", referrer_client) if referrer_client else {}
+                if int(referrer_data.get("expiryTime") or 0) // 1000 > int(time.time()):
+                    updated_referrer = add_days_to_client_by_sub_id(referrer["sub_id"], reward["reward_days"])
+                    referrer_expiry = int(updated_referrer.get("expiryTime", 0)) // 1000
+                    await update_user(
+                        tg_id=referrer["tg_id"],
+                        username=referrer["username"],
+                        email=referrer["email"],
+                        sub_id=referrer["sub_id"],
+                        subscription_url=f"https://87.121.82.175:2096/jsnn/{referrer['sub_id']}",
+                        status=referrer["status"],
+                        created_at=referrer["created_at"],
+                        expires_at=referrer_expiry,
+                    )
+                    await mark_referral_rewards_applied([payment_id])
+                    applied = True
+            await request.app["bot"].send_message(
+                reward["referrer_id"],
+                f"🎁 реферальная награда: +{reward['reward_days']} дней"
+                + (" к подписке." if applied else ".
+
+⚠️ активной подписки нет — дни накоплены и автоматически добавятся к следующей подписке.")
+            )
+    except Exception:
+        logging.exception("failed to process referral reward")
+
     await request.app["bot"].send_message(
         payment["tg_id"],
         "✅ оплата прошла!\n\n"
         f"🔗 подписка продлена на {payment['days']} дней.",
     )
+
+    try:
+        pending_rewards = await get_pending_referral_rewards(payment["tg_id"])
+        if pending_rewards:
+            total_pending = sum(int(row["reward_days"]) for row in pending_rewards)
+            updated_client = add_days_to_client_by_sub_id(user["sub_id"], total_pending)
+            pending_expiry = int(updated_client.get("expiryTime", 0)) // 1000
+            await update_user(
+                tg_id=user["tg_id"], username=user["username"], email=user["email"],
+                sub_id=user["sub_id"], subscription_url=f"https://87.121.82.175:2096/jsnn/{user['sub_id']}",
+                status="paid", created_at=user["created_at"], expires_at=pending_expiry,
+            )
+            await mark_referral_rewards_applied([row["payment_id"] for row in pending_rewards])
+            await request.app["bot"].send_message(
+                user["tg_id"], f"🎁 накопленные реферальные дни добавлены: +{total_pending} дней."
+            )
+    except Exception:
+        logging.exception("failed to apply pending referral rewards")
 
     await notify_admin(
         request.app["bot"],
