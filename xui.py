@@ -374,3 +374,31 @@ def delete_client_by_tg_id(tg_id):
     )
 
     return True
+
+
+def add_days_to_client_by_sub_id(sub_id, days):
+    if days <= 0:
+        raise ValueError("days must be positive")
+    client = find_client_by_sub_id(sub_id)
+    if not client:
+        raise RuntimeError("subscription not found")
+    email = client.get("email")
+    if not email:
+        raise RuntimeError("client email not found")
+    client_data = client.get("client", client)
+    now = int(time.time() * 1000)
+    current_expiry = int(client_data.get("expiryTime") or 0)
+    expiry_time = max(current_expiry, now) + days * 24 * 60 * 60 * 1000
+    payload = dict(client_data)
+    payload.update({
+        "email": email,
+        "subId": client_data.get("subId"),
+        "expiryTime": expiry_time,
+        "limitHwid": client_data.get("limitHwid", 3),
+        "enable": True,
+    })
+    _request("POST", f"/panel/api/clients/update/{quote(email, safe='')}", payload)
+    updated = find_client(email)
+    if not updated:
+        raise RuntimeError("client disappeared after extension")
+    return updated
