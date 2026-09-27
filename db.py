@@ -79,6 +79,25 @@ async def init_db():
             await db.execute("ALTER TABLE payments ADD COLUMN months INTEGER NOT NULL DEFAULT 1")
 
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS referrals (
+                referred_id INTEGER PRIMARY KEY,
+                referrer_id INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS referral_rewards (
+                payment_id TEXT PRIMARY KEY,
+                referred_id INTEGER NOT NULL,
+                referrer_id INTEGER NOT NULL,
+                reward_days INTEGER NOT NULL,
+                applied INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            )
+        """)
+
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS bot_settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -366,4 +385,80 @@ async def delete_user_data(tg_id: int):
         await db.execute("DELETE FROM promo_uses WHERE tg_id = ?", (tg_id,))
         await db.execute("DELETE FROM payments WHERE tg_id = ?", (tg_id,))
         await db.execute("DELETE FROM users WHERE tg_id = ?", (tg_id,))
+        await db.commit()
+
+
+async def create_referral(referrer_id: int, referred_id: int):
+    if referrer_id == referred_id:
+        return False
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute("SELECT 1 FROM referrals WHERE referred_id = ?", (referred_id,))
+        if await cursor.fetchone():
+            return False
+        await db.execute(
+            "INSERT INTO referrals (referred_id, referrer_id, created_at) VALUES (?, ?, strftime('%s','now'))",
+            (referred_id, referrer_id),
+        )
+        await db.commit()
+        return True
+
+async def get_referral_stats(tg_id: int):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM referrals WHERE referrer_id = ?", (tg_id,))
+        total = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT COUNT(DISTINCT referred_id) FROM referral_rewards WHERE referrer_id = ?", (tg_id,))
+        paid = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT COALESCE(SUM(reward_days),0) FROM referral_rewards WHERE referrer_id = ?", (tg_id,))
+        earned = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT COALESCE(SUM(reward_days),0) FROM referral_rewards WHERE referrer_id = ? AND applied = 0", (tg_id,))
+        pending = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT 1 FROM referrals WHERE referred_id = ?", (tg_id,))
+        return {
+            "total": total,
+            "paid": paid,
+            "earned_days": earned,
+            "pending_days": pending,
+            "is_referred": await cursor.fetchone() is not None,
+        }
+
+async def get_pending_referral_rewards(tg_id: int):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT payment_id, reward_days FROM referral_rewards WHERE referrer_id = ? AND applied = 0 ORDER BY created_at",
+            (tg_id,),
+        )
+        return await cursor.fetchall()
+
+async def register_referral_payment(payment_id: str, referred_id: int):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute("BEGIN IMMEDIATE")
+        cursor = await db.execute("SELECT referrer_id FROM referrals WHERE referred_id = ?", (referred_id,))
+        referral = await cursor.fetchone()
+        if not referral:
+            await db.commit()
+            return None
+        cursor = await db.execute("SELECT COUNT(*) FROM referral_rewards WHERE referred_id = ?", (referred_id,))
+        count = (await cursor.fetchone())[0]
+        reward_days = 10 if count == 0 else 5
+        cursor = await db.execute(
+            "INSERT OR IGNORE INTO referral_rewards (payment_id,referred_id,referrer_id,reward_days,applied,created_at) VALUES (?,?,?,?,0,strftime('%s','now'))",
+            (payment_id, referred_id, referral["referrer_id"], reward_days),
+        )
+        inserted = cursor.rowcount == 1
+        await db.commit()
+        if not inserted:
+            return None
+        return {"referrer_id": referral["referrer_id"], "reward_days": reward_days, "first_payment": count == 0}
+
+async def mark_referral_rewards_applied(payment_ids):
+    if not payment_ids:
+        return
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        placeholders = ",".join("?" for _ in payment_ids)
+        await db.execute(
+            f"UPDATE referral_rewards SET applied = 1 WHERE payment_id IN ({placeholders})",
+            tuple(payment_ids),
+        )
         await db.commit()
