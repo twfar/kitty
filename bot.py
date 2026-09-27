@@ -368,9 +368,7 @@ async def start(message: Message):
         stats = await get_referral_stats(message.from_user.id)
         await answer_menu(
             message,
-            "главное меню kitty vpn
-
-"
+            "главное меню kitty vpn\n\n"
             "наш канал — @kittyvpnoff",
             reply_markup=main_keyboard(stats["total"]),
             photo=MAIN_MENU_PHOTO,
@@ -607,9 +605,7 @@ async def back_to_subscription(callback: CallbackQuery):
 async def back_to_menu(callback: CallbackQuery):
     await callback.answer()
     await edit_menu(callback.message, 
-        "главное меню kitty vpn
-
-"
+        "главное меню kitty vpn\n\n"
         "наш канал — @kittyvpnoff",
         reply_markup=main_keyboard(),
     )
