@@ -339,9 +339,7 @@ async def start(message: Message):
                     try:
                         await message.bot.send_message(
                             referrer_id,
-                            "👥 по твоей реферальной ссылке перешёл новый пользователь!
-
-"
+                            "👥 по твоей реферальной ссылке перешёл новый пользователь!\n\n"
                             "если он оплатит подписку, ты получишь реферальные дни.",
                         )
                     except Exception:
