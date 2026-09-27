@@ -104,6 +104,46 @@ async def init_db():
             )
         """)
 
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS notification_log (
+                tg_id INTEGER NOT NULL,
+                notification_type TEXT NOT NULL,
+                marker TEXT NOT NULL,
+                sent_at INTEGER NOT NULL,
+                PRIMARY KEY (tg_id, notification_type, marker)
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS device_snapshots (
+                tg_id INTEGER NOT NULL,
+                device_key TEXT NOT NULL,
+                device_name TEXT,
+                first_seen INTEGER,
+                PRIMARY KEY (tg_id, device_key)
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS notification_log (
+                tg_id INTEGER NOT NULL,
+                notification_type TEXT NOT NULL,
+                marker TEXT NOT NULL,
+                sent_at INTEGER NOT NULL,
+                PRIMARY KEY (tg_id, notification_type, marker)
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS device_snapshots (
+                tg_id INTEGER NOT NULL,
+                device_key TEXT NOT NULL,
+                device_name TEXT,
+                first_seen INTEGER,
+                PRIMARY KEY (tg_id, device_key)
+            )
+        """)
+
         await db.execute(
             "INSERT OR IGNORE INTO bot_settings (key, value) VALUES (?, ?)",
             ("maintenance_enabled", "0"),
@@ -464,3 +504,49 @@ async def mark_referral_rewards_applied(payment_ids):
         await db.commit()
 
 # notifications
+
+
+async def get_active_users():
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM users WHERE sub_id IS NOT NULL AND expires_at IS NOT NULL AND status IN ('trial', 'paid')"
+        )
+        return await cursor.fetchall()
+
+
+async def notification_was_sent(tg_id: int, notification_type: str, marker: str) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            "SELECT 1 FROM notification_log WHERE tg_id = ? AND notification_type = ? AND marker = ?",
+            (tg_id, notification_type, str(marker)),
+        )
+        return await cursor.fetchone() is not None
+
+
+async def mark_notification_sent(tg_id: int, notification_type: str, marker: str):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO notification_log (tg_id, notification_type, marker, sent_at) VALUES (?, ?, ?, strftime('%s', 'now'))",
+            (tg_id, notification_type, str(marker)),
+        )
+        await db.commit()
+
+
+async def get_device_snapshots(tg_id: int):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT device_key, device_name, first_seen FROM device_snapshots WHERE tg_id = ?",
+            (tg_id,),
+        )
+        return await cursor.fetchall()
+
+
+async def save_device_snapshot(tg_id: int, device_key: str, device_name: str, first_seen: int):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO device_snapshots (tg_id, device_key, device_name, first_seen) VALUES (?, ?, ?, ?)",
+            (tg_id, device_key, device_name, first_seen),
+        )
+        await db.commit()
