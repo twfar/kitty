@@ -33,6 +33,8 @@ from db import (
     get_setting,
     set_setting,
     delete_user_data,
+    create_referral,
+    get_referral_stats,
 )
 from rollypay import create_payment as rollypay_create_payment
 
@@ -155,10 +157,11 @@ dp.message.outer_middleware(MaintenanceMiddleware())
 dp.callback_query.outer_middleware(MaintenanceMiddleware())
 
 
-def main_keyboard():
+def main_keyboard(referral_count=0):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔗 подписка", callback_data="subscription", style=ButtonStyle.PRIMARY)],
         [InlineKeyboardButton(text="📢 наш канал", url="https://t.me/kittyvpnoff")],
+        [InlineKeyboardButton(text=f"👥 рефералы — {referral_count}", callback_data="referrals")],
         [InlineKeyboardButton(text="🎟 промокод", callback_data="promo")],
         [InlineKeyboardButton(text="🆘 поддержка", callback_data="support")],
         [InlineKeyboardButton(text="ℹ️ о сервисе", callback_data="about_service")],
@@ -318,6 +321,17 @@ async def send_subscription_info(message: Message, user):
 @dp.message(CommandStart())
 async def start(message: Message):
     user = await get_user(message.from_user.id)
+
+    parts = (message.text or "").split(maxsplit=1)
+    payload = parts[1] if len(parts) > 1 else ""
+    if not user and payload.startswith("ref_"):
+        try:
+            referrer_id = int(payload[4:])
+            if referrer_id != message.from_user.id:
+                await create_referral(referrer_id, message.from_user.id)
+        except (TypeError, ValueError):
+            logging.warning("invalid referral payload: %s", payload)
+
     username = f"@{message.from_user.username}" if message.from_user.username else "—"
     sub_id = user["sub_id"] if user else "—"
     if message.from_user.id != ADMIN_ID:
@@ -333,10 +347,11 @@ async def start(message: Message):
             logging.exception("failed to notify admin about /start")
 
     if user and user["status"] != "pending":
+        stats = await get_referral_stats(message.from_user.id)
         await answer_menu(
             message,
             "главное меню",
-            reply_markup=main_keyboard(),
+            reply_markup=main_keyboard(stats["total"]),
             photo=MAIN_MENU_PHOTO,
         )
         return
@@ -573,6 +588,31 @@ async def back_to_menu(callback: CallbackQuery):
     await edit_menu(callback.message, 
         "🐈 главное меню",
         reply_markup=main_keyboard(),
+    )
+
+
+@dp.callback_query(lambda c: c.data == "referrals")
+async def referrals(callback: CallbackQuery):
+    stats = await get_referral_stats(callback.from_user.id)
+    me = await callback.bot.get_me()
+    link = f"https://t.me/{me.username}?start=ref_{callback.from_user.id}"
+
+    await callback.answer()
+    await edit_menu(
+        callback.message,
+        "👥 реферальная система\n\n"
+        f"👤 приглашено: {stats['total']}\n"
+        f"💳 оплатили: {stats['paid']}\n"
+        f"🎁 получено дней: {stats['earned_days']}\n"
+        f"💤 накоплено: {stats['pending_days']} дней\n\n"
+        "🎁 первая оплата друга: +10 дней\n"
+        "🎁 каждая следующая оплата: +5 дней\n\n"
+        "⚠️ без активной подписки дни не сгорают — они копятся и автоматически добавятся к следующей подписке.\n\n"
+        f"твоя ссылка:\n{link}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 скопировать ссылку", copy_text=CopyTextButton(text=link), style=ButtonStyle.PRIMARY)],
+            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
+        ]),
     )
 
 
