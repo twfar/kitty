@@ -524,13 +524,14 @@ async def is_notification_blocked(tg_id: int) -> bool:
 async def block_notification_user(tg_id: int, username=None) -> bool:
     import time
     async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("BEGIN IMMEDIATE")
+
         cursor = await db.execute(
             "SELECT 1 FROM notification_blocked_users WHERE tg_id = ?",
             (tg_id,),
         )
-        exists = await cursor.fetchone()
-
-        if exists:
+        if await cursor.fetchone() is not None:
+            await db.commit()
             return False
 
         await db.execute(
