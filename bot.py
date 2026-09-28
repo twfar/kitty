@@ -1216,6 +1216,7 @@ async def send_notification(bot: Bot, user, text: str, reply_markup=None) -> boo
         return True
     except TelegramForbiddenError:
         username = user["username"] or "—"
+        await block_notification_user(tg_id, username)
         logging.warning(
             "user blocked bot: tg_id=%s username=%s",
             tg_id,
