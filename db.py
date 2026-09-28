@@ -105,6 +105,13 @@ async def init_db():
         """)
 
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS notification_blocked_users (
+                tg_id INTEGER PRIMARY KEY,
+                username TEXT,
+                blocked_at INTEGER NOT NULL
+            )
+        """)
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS notification_log (
                 tg_id INTEGER NOT NULL,
                 notification_type TEXT NOT NULL,
@@ -504,6 +511,37 @@ async def mark_referral_rewards_applied(payment_ids):
         await db.commit()
 
 # notifications
+
+async def is_notification_blocked(tg_id: int) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            "SELECT 1 FROM notification_blocked_users WHERE tg_id = ?",
+            (tg_id,),
+        )
+        return await cursor.fetchone() is not None
+
+
+async def block_notification_user(tg_id: int, username=None):
+    import time
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            """
+            INSERT OR REPLACE INTO notification_blocked_users
+            (tg_id, username, blocked_at)
+            VALUES (?, ?, ?)
+            """,
+            (tg_id, username, int(time.time())),
+        )
+        await db.commit()
+
+
+async def unblock_notification_user(tg_id: int):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            "DELETE FROM notification_blocked_users WHERE tg_id = ?",
+            (tg_id,),
+        )
+        await db.commit()
 
 
 async def get_active_users():
