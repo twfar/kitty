@@ -13,6 +13,7 @@ from db import (
     get_payment,
     update_payment_status,
     get_user,
+    get_referrer_id,
     update_user,
     register_referral_payment,
     get_pending_referral_rewards,
@@ -215,6 +216,8 @@ async def webhook(request):
     except Exception:
         logging.exception("failed to apply pending referral rewards")
 
+    referrer_id = await get_referrer_id(payment["tg_id"])
+
     await notify_admin(
         request.app["bot"],
         "✅ подписка продлена автоматически\n\n"
@@ -222,7 +225,8 @@ async def webhook(request):
         f"💳 payment id: {payment_id}\n"
         f"🎁 добавлено: {payment['days']} дней\n"
         f"📱 устройств: {payment['device_limit']}\n"
-        f"⏳ expires: {expires_at}",
+        f"⏳ expires: {expires_at}\n"
+        f"👥 реферал: {'да — ' + str(referrer_id) if referrer_id else 'нет'}",
     )
 
     return web.Response(status=200, text="ok")
