@@ -7,6 +7,7 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, BaseMiddleware
 from aiogram.filters import Command, CommandStart
 from aiogram.enums import ButtonStyle
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton, InputMediaPhoto
 from aiogram.utils.formatting import Text, CustomEmoji
 
@@ -1178,6 +1179,43 @@ async def admin_message_handler(message: Message):
 
 
 
+
+
+blocked_notification_users = set()
+
+
+async def send_notification(bot: Bot, user, text: str, reply_markup=None) -> bool:
+    tg_id = user["tg_id"]
+
+    if tg_id in blocked_notification_users:
+        return False
+
+    try:
+        await bot.send_message(tg_id, text, reply_markup=reply_markup)
+        return True
+    except TelegramForbiddenError:
+        blocked_notification_users.add(tg_id)
+
+        username = user["username"] or "—"
+        logging.warning(
+            "user blocked bot: tg_id=%s username=%s",
+            tg_id,
+            username,
+        )
+
+        try:
+            await bot.send_message(
+                ADMIN_ID,
+                "🚫 пользователь заблокировал бота\n\n"
+                f"👤 username: {username}\n"
+                f"🆔 telegram id: {tg_id}",
+            )
+        except Exception:
+            logging.exception("failed to notify admin about blocked user")
+
+        return False
+
+
 async def notifications_worker(bot: Bot):
     while True:
         try:
@@ -1193,8 +1231,9 @@ async def notifications_worker(bot: Bot):
                 if user["status"] == "trial" and 0 < remaining <= 3 * 3600:
                     if not await notification_was_sent(tg_id, "trial_soon", expires_at):
                         try:
-                            await bot.send_message(
-                                tg_id,
+                            sent = await send_notification(
+                                bot,
+                                user,
                                 "⏳ твой trial скоро закончится.\n\n"
                                 "осталось меньше 3 часов.\n"
                                 "хочешь продолжить пользоваться kitty vpn — купи подписку.",
@@ -1202,7 +1241,8 @@ async def notifications_worker(bot: Bot):
                                     [InlineKeyboardButton(text="💳 купить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
                                 ]),
                             )
-                            await mark_notification_sent(tg_id, "trial_soon", expires_at)
+                            if sent:
+                                await mark_notification_sent(tg_id, "trial_soon", expires_at)
                         except Exception:
                             logging.exception("failed to send trial reminder")
 
@@ -1211,45 +1251,51 @@ async def notifications_worker(bot: Bot):
                     if remaining <= 24 * 3600:
                         if not await notification_was_sent(tg_id, "subscription_day", expires_at):
                             try:
-                                await bot.send_message(
-                                    tg_id,
+                                sent = await send_notification(
+                                    bot,
+                                    user,
                                     "⏳ подписка закончится в ближайшие сутки.\n\n"
                                     "продли её заранее, чтобы не потерять доступ.",
                                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                                         [InlineKeyboardButton(text="💳 продлить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
                                     ]),
                                 )
-                                await mark_notification_sent(tg_id, "subscription_day", expires_at)
+                                if sent:
+                                    await mark_notification_sent(tg_id, "subscription_day", expires_at)
                             except Exception:
                                 logging.exception("failed to send day subscription reminder")
 
                     if remaining <= 3600:
                         if not await notification_was_sent(tg_id, "subscription_hour", expires_at):
                             try:
-                                await bot.send_message(
-                                    tg_id,
+                                sent = await send_notification(
+                                    bot,
+                                    user,
                                     "⚠️ подписка закончится примерно через час.\n\n"
                                     "продли её сейчас, чтобы vpn продолжил работать без перерыва.",
                                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                                         [InlineKeyboardButton(text="💳 продлить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
                                     ]),
                                 )
-                                await mark_notification_sent(tg_id, "subscription_hour", expires_at)
+                                if sent:
+                                        await mark_notification_sent(tg_id, "subscription_hour", expires_at)
                             except Exception:
                                 logging.exception("failed to send hour subscription reminder")
 
                 if remaining <= 0:
                     if not await notification_was_sent(tg_id, "subscription_expired", expires_at):
                         try:
-                            await bot.send_message(
-                                tg_id,
+                            sent = await send_notification(
+                                bot,
+                                user,
                                 "❌ срок подписки закончился.\n\n"
                                 "купи новую подписку, чтобы снова пользоваться kitty vpn.",
                                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                                     [InlineKeyboardButton(text="💳 купить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
                                 ]),
                             )
-                            await mark_notification_sent(tg_id, "subscription_expired", expires_at)
+                            if sent:
+                                await mark_notification_sent(tg_id, "subscription_expired", expires_at)
                         except Exception:
                             logging.exception("failed to send expiration notification")
 
@@ -1297,8 +1343,9 @@ async def notifications_worker(bot: Bot):
                             known.add(key)
 
                             dt = datetime.fromtimestamp(first_seen).strftime("%d.%m.%Y %H:%M")
-                            await bot.send_message(
-                                tg_id,
+                            await send_notification(
+                                bot,
+                                user,
                                 "📱 подключено новое устройство!\n\n"
                                 f"устройство: {name}\n"
                                 f"подключение: {dt}\n\n"
