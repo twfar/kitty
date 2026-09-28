@@ -521,18 +521,19 @@ async def is_notification_blocked(tg_id: int) -> bool:
         return await cursor.fetchone() is not None
 
 
-async def block_notification_user(tg_id: int, username=None):
+async def block_notification_user(tg_id: int, username=None) -> bool:
     import time
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute(
+        cursor = await db.execute(
             """
-            INSERT OR REPLACE INTO notification_blocked_users
+            INSERT OR IGNORE INTO notification_blocked_users
             (tg_id, username, blocked_at)
             VALUES (?, ?, ?)
             """,
             (tg_id, username, int(time.time())),
         )
         await db.commit()
+        return cursor.rowcount == 1
 
 
 async def unblock_notification_user(tg_id: int):
