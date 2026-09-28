@@ -42,6 +42,9 @@ from db import (
     mark_notification_sent,
     get_device_snapshots,
     save_device_snapshot,
+    is_notification_blocked,
+    block_notification_user,
+    unblock_notification_user,
 )
 from rollypay import create_payment as rollypay_create_payment
 
@@ -934,6 +937,27 @@ async def admin_clear_test_user(callback: CallbackQuery):
         reply_markup=admin_keyboard(),
     )
 
+@dp.callback_query(lambda c: c.data.startswith("unblock_notifications:"))
+async def unblock_notifications(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    try:
+        tg_id = int(callback.data.split(":", 1)[1])
+    except (TypeError, ValueError):
+        await callback.answer("некорректный telegram id", show_alert=True)
+        return
+
+    await unblock_notification_user(tg_id)
+    await callback.answer("уведомления разблокированы")
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(
+        "🔓 уведомления разблокированы\n\n"
+        f"🆔 telegram id: {tg_id}\n\n"
+        "бот снова будет пытаться отправлять этому пользователю уведомления."
+    )
+
 
 @dp.callback_query(lambda c: c.data == "admin_maintenance")
 async def admin_maintenance(callback: CallbackQuery):
@@ -1181,21 +1205,16 @@ async def admin_message_handler(message: Message):
 
 
 
-blocked_notification_users = set()
-
-
 async def send_notification(bot: Bot, user, text: str, reply_markup=None) -> bool:
     tg_id = user["tg_id"]
 
-    if tg_id in blocked_notification_users:
+    if await is_notification_blocked(tg_id):
         return False
 
     try:
         await bot.send_message(tg_id, text, reply_markup=reply_markup)
         return True
     except TelegramForbiddenError:
-        blocked_notification_users.add(tg_id)
-
         username = user["username"] or "—"
         logging.warning(
             "user blocked bot: tg_id=%s username=%s",
@@ -1209,6 +1228,12 @@ async def send_notification(bot: Bot, user, text: str, reply_markup=None) -> boo
                 "🚫 пользователь заблокировал бота\n\n"
                 f"👤 username: {username}\n"
                 f"🆔 telegram id: {tg_id}",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(
+                        text="🔓 разблокировать уведомления",
+                        callback_data=f"unblock_notifications:{tg_id}",
+                    )],
+                ]),
             )
         except Exception:
             logging.exception("failed to notify admin about blocked user")
