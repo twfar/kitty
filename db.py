@@ -477,6 +477,15 @@ async def get_pending_referral_rewards(tg_id: int):
         )
         return await cursor.fetchall()
 
+async def get_referrer_id(referred_id: int):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            "SELECT referrer_id FROM referrals WHERE referred_id = ?",
+            (referred_id,),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
 async def register_referral_payment(payment_id: str, referred_id: int):
     async with aiosqlite.connect(DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
