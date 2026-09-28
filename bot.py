@@ -1216,12 +1216,30 @@ async def send_notification(bot: Bot, user, text: str, reply_markup=None) -> boo
         return True
     except TelegramForbiddenError:
         username = user["username"] or "—"
-        await block_notification_user(tg_id, username)
+        is_new_block = await block_notification_user(tg_id, username)
         logging.warning(
             "user blocked bot: tg_id=%s username=%s",
             tg_id,
             username,
         )
+
+        if is_new_block:
+            try:
+                await bot.send_message(
+                    ADMIN_ID,
+                    "🚫 пользователь заблокировал бота\n\n"
+                    f"👤 username: {username}\n"
+                    f"🆔 telegram id: {tg_id}",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(
+                            text="🔓 разблокировать уведомления",
+                            callback_data=f"unblock_notifications:{tg_id}",
+                        )],
+                    ]),
+                )
+            except Exception:
+                logging.exception("failed to notify admin about blocked user")
+
         return False
 
 
