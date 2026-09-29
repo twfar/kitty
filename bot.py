@@ -29,6 +29,8 @@ from db import (
     create_user,
     update_user,
     get_promo,
+    get_promos,
+    delete_promo,
     create_promo,
     use_promo,
     create_payment,
@@ -224,6 +226,10 @@ def admin_keyboard():
         [InlineKeyboardButton(text="📢 рассылка", callback_data="admin_broadcast")],
         [InlineKeyboardButton(text="💬 личное сообщение", callback_data="admin_personal_message")],
         [InlineKeyboardButton(text="🎟 создать промокод", callback_data="admin_create_promo")],
+        [
+            InlineKeyboardButton(text="📋 промокоды", callback_data="admin_promos"),
+            InlineKeyboardButton(text="🗑 удалить промокод", callback_data="admin_delete_promo"),
+        ],
         [InlineKeyboardButton(text="🔧 технические работы", callback_data="admin_maintenance")],
         [InlineKeyboardButton(text="🗑 очистить тестовый аккаунт", callback_data="admin_clear_test_user")],
     ])
@@ -1197,6 +1203,106 @@ async def admin_maintenance_message(callback: CallbackQuery):
     )
 
 
+def format_promo_expiry(expires_at):
+    if not expires_at:
+        return "без срока"
+    return datetime.fromtimestamp(int(expires_at)).strftime("%d.%m.%Y %H:%M")
+
+
+def promo_status_text(promo):
+    now = int(time.time())
+    if not promo["enabled"]:
+        return "выключен"
+    if promo["expires_at"] and promo["expires_at"] < now:
+        return "истёк"
+    if promo["max_uses"] > 0 and promo["used_count"] >= promo["max_uses"]:
+        return "лимит исчерпан"
+    return "активен"
+
+
+@dp.callback_query(lambda c: c.data == "admin_promos")
+async def admin_promos(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    promos = await get_promos()
+    await callback.answer()
+
+    if not promos:
+        await edit_menu(
+            callback.message,
+            "📋 промокоды\n\nпромокодов пока нет.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+            ]),
+        )
+        return
+
+    lines = ["📋 промокоды", ""]
+    for promo in promos:
+        limit = "∞" if promo["max_uses"] == 0 else str(promo["max_uses"])
+        lines.append(
+            f"🎟 {promo['code']} — +{promo['reward_days']} д.\n"
+            f"   использований: {promo['used_count']} / {limit}\n"
+            f"   срок: {format_promo_expiry(promo['expires_at'])}\n"
+            f"   статус: {promo_status_text(promo)}"
+        )
+
+    await edit_menu(
+        callback.message,
+        "\n\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗑 удалить промокод", callback_data="admin_delete_promo")],
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+        ]),
+    )
+
+
+@dp.callback_query(lambda c: c.data == "admin_delete_promo")
+async def admin_delete_promo(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    admin_action_waiting[ADMIN_ID] = "delete_promo"
+    await callback.answer()
+    await edit_menu(
+        callback.message,
+        "🗑 удаление промокода\n\n"
+        "отправь код промокода, который нужно удалить.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📋 посмотреть промокоды", callback_data="admin_promos")],
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+        ]),
+    )
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_delete_promo_confirm:"))
+async def admin_delete_promo_confirm(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    code = callback.data.split(":", 1)[1]
+    promo = await get_promo(code)
+    if not promo:
+        await callback.answer("промокод уже удалён", show_alert=True)
+        await admin_promos(callback)
+        return
+
+    deleted = await delete_promo(code)
+    if deleted:
+        await callback.answer("промокод удалён")
+        await edit_menu(
+            callback.message,
+            f"✅ промокод {code} удалён.",
+            reply_markup=admin_keyboard(),
+        )
+    else:
+        await callback.answer("не удалось удалить промокод", show_alert=True)
+
+
 @dp.callback_query(lambda c: c.data == "admin_create_promo")
 async def admin_create_promo(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -1443,6 +1549,34 @@ async def admin_message_handler(message: Message):
         await message.answer(
             "✅ сообщение тех. работ обновлено.",
             reply_markup=admin_keyboard(),
+        )
+        return
+
+    if action == "delete_promo":
+        code = text.upper()
+        promo = await get_promo(code)
+        if not promo:
+            await message.answer(
+                "❌ промокод не найден.",
+                reply_markup=admin_keyboard(),
+            )
+            admin_action_waiting.pop(message.from_user.id, None)
+            return
+
+        admin_action_waiting.pop(message.from_user.id, None)
+        await message.answer(
+            "⚠️ удалить промокод?\n\n"
+            f"🎟 код: {promo['code']}\n"
+            f"🎁 дней: {promo['reward_days']}\n"
+            f"👥 использований: {promo['used_count']} / "
+            f"{'∞' if promo['max_uses'] == 0 else promo['max_uses']}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="🗑 удалить",
+                    callback_data=f"admin_delete_promo_confirm:{code}",
+                )],
+                [InlineKeyboardButton(text="❌ отмена", callback_data="admin_back")],
+            ]),
         )
         return
 
