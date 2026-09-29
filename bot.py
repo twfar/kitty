@@ -7,7 +7,7 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, BaseMiddleware
 from aiogram.filters import Command, CommandStart
 from aiogram.enums import ButtonStyle
-from aiogram.exceptions import TelegramForbiddenError
+from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, CopyTextButton, InputMediaPhoto
 from aiogram.utils.formatting import Text, CustomEmoji
 
@@ -45,6 +45,8 @@ from db import (
     is_notification_blocked,
     block_notification_user,
     unblock_notification_user,
+    get_broadcast_users,
+    get_user_by_username,
 )
 from rollypay import create_payment as rollypay_create_payment
 
@@ -74,6 +76,11 @@ OFFER_URL = "https://telegra.ph/PUBLICHNAYA-OFERTA-08-12-15"
 admin_action_waiting = {}
 user_action_waiting = {}
 purchase_selection = {}
+
+broadcast_queue = asyncio.Queue()
+pending_broadcast = {}
+pending_personal = {}
+BROADCAST_DELAY = 0.06
 
 MENU_PHOTOS = [
     "AgACAgIAAxkBAAIDlGq2rmZEjEOkJFoe1hsAAbSALQdmQAACRyRrG5snqUldG_wdjq9mswEAAwIAA3kAAz0E",
@@ -213,6 +220,8 @@ def trial_keyboard():
 
 def admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📢 рассылка", callback_data="admin_broadcast")],
+        [InlineKeyboardButton(text="💬 личное сообщение", callback_data="admin_personal_message")],
         [InlineKeyboardButton(text="🎟 создать промокод", callback_data="admin_create_promo")],
         [InlineKeyboardButton(text="🔧 технические работы", callback_data="admin_maintenance")],
         [InlineKeyboardButton(text="🗑 очистить тестовый аккаунт", callback_data="admin_clear_test_user")],
@@ -959,6 +968,173 @@ async def unblock_notifications(callback: CallbackQuery):
     )
 
 
+def broadcast_group_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="👥 все", callback_data="admin_broadcast_group:all"),
+            InlineKeyboardButton(text="🟢 активные", callback_data="admin_broadcast_group:active"),
+        ],
+        [
+            InlineKeyboardButton(text="🧪 trial", callback_data="admin_broadcast_group:trial"),
+            InlineKeyboardButton(text="💳 paid", callback_data="admin_broadcast_group:paid"),
+        ],
+        [InlineKeyboardButton(text="⌛ истёкшие", callback_data="admin_broadcast_group:expired")],
+        [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+    ])
+
+
+def admin_confirm_keyboard(kind):
+    prefix = "admin_broadcast" if kind == "broadcast" else "admin_personal"
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ отправить", callback_data=f"{prefix}_confirm"),
+            InlineKeyboardButton(text="❌ отмена", callback_data=f"{prefix}_cancel"),
+        ],
+    ])
+
+
+@dp.callback_query(lambda c: c.data == "admin_broadcast")
+async def admin_broadcast(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+    admin_action_waiting.pop(ADMIN_ID, None)
+    pending_broadcast.pop(ADMIN_ID, None)
+    await callback.answer()
+    await edit_menu(
+        callback.message,
+        "📢 рассылка\n\nвыбери группу пользователей:",
+        reply_markup=broadcast_group_keyboard(),
+    )
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_broadcast_group:"))
+async def admin_broadcast_group(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    group = callback.data.split(":", 1)[1]
+    names = {
+        "all": "всем",
+        "active": "активным",
+        "trial": "trial",
+        "paid": "paid",
+        "expired": "истёкшим",
+    }
+    admin_action_waiting[ADMIN_ID] = f"broadcast_message:{group}"
+    pending_broadcast.pop(ADMIN_ID, None)
+    await callback.answer()
+    await edit_menu(
+        callback.message,
+        f"📢 рассылка: {names.get(group, group)}\n\n"
+        "отправь одно сообщение для рассылки.\n"
+        "можно отправлять текст, фото, видео, документ и другие поддерживаемые telegram-сообщения.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_broadcast")]
+        ]),
+    )
+
+
+@dp.callback_query(lambda c: c.data == "admin_broadcast_confirm")
+async def admin_broadcast_confirm(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    job = pending_broadcast.pop(ADMIN_ID, None)
+    admin_action_waiting.pop(ADMIN_ID, None)
+    if not job:
+        await callback.answer("рассылка не найдена", show_alert=True)
+        return
+
+    await broadcast_queue.put(job)
+    await callback.answer("рассылка поставлена в очередь")
+    await callback.message.answer(
+        "📢 рассылка поставлена в очередь.\n\n"
+        f"👥 получатели: {job['group_name']}\n"
+        "я сообщу результат после завершения."
+    )
+
+
+@dp.callback_query(lambda c: c.data == "admin_broadcast_cancel")
+async def admin_broadcast_cancel(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer()
+        return
+    pending_broadcast.pop(ADMIN_ID, None)
+    admin_action_waiting.pop(ADMIN_ID, None)
+    await callback.answer("рассылка отменена")
+    await edit_menu(callback.message, "⚙️ админ-панель\n\nвыбери действие:", reply_markup=admin_keyboard())
+
+
+@dp.callback_query(lambda c: c.data == "admin_personal_message")
+async def admin_personal_message(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+    pending_personal.pop(ADMIN_ID, None)
+    admin_action_waiting[ADMIN_ID] = "personal_target"
+    await callback.answer()
+    await edit_menu(
+        callback.message,
+        "💬 личное сообщение\n\n"
+        "отправь telegram id или @username пользователя:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
+        ]),
+    )
+
+
+@dp.callback_query(lambda c: c.data == "admin_personal_confirm")
+async def admin_personal_confirm(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+    job = pending_personal.pop(ADMIN_ID, None)
+    admin_action_waiting.pop(ADMIN_ID, None)
+    if not job:
+        await callback.answer("сообщение не найдено", show_alert=True)
+        return
+
+    try:
+        await callback.bot.copy_message(
+            chat_id=job["target_id"],
+            from_chat_id=job["source_chat_id"],
+            message_id=job["message_id"],
+        )
+        await callback.answer("сообщение отправлено")
+        await callback.message.answer("✅ личное сообщение отправлено.", reply_markup=admin_keyboard())
+    except TelegramForbiddenError:
+        await callback.answer("пользователь заблокировал бота", show_alert=True)
+    except TelegramRetryAfter as e:
+        await asyncio.sleep(e.retry_after)
+        try:
+            await callback.bot.copy_message(
+                chat_id=job["target_id"],
+                from_chat_id=job["source_chat_id"],
+                message_id=job["message_id"],
+            )
+            await callback.message.answer("✅ личное сообщение отправлено.", reply_markup=admin_keyboard())
+        except Exception as e2:
+            await callback.message.answer(f"❌ не удалось отправить: {e2}", reply_markup=admin_keyboard())
+    except Exception as e:
+        logging.exception("personal message failed")
+        await callback.answer("ошибка отправки", show_alert=True)
+        await callback.message.answer(f"❌ не удалось отправить: {e}", reply_markup=admin_keyboard())
+
+
+@dp.callback_query(lambda c: c.data == "admin_personal_cancel")
+async def admin_personal_cancel(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer()
+        return
+    pending_personal.pop(ADMIN_ID, None)
+    admin_action_waiting.pop(ADMIN_ID, None)
+    await callback.answer("отменено")
+    await edit_menu(callback.message, "⚙️ админ-панель\n\nвыбери действие:", reply_markup=admin_keyboard())
+
+
 @dp.callback_query(lambda c: c.data == "admin_maintenance")
 async def admin_maintenance(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -1079,6 +1255,92 @@ async def admin_message_handler(message: Message):
 
             if not message.text:
                 return
+
+    if message.from_user.id == ADMIN_ID:
+        action = admin_action_waiting.get(message.from_user.id)
+
+        if action and action.startswith("broadcast_message:"):
+            group = action.split(":", 1)[1]
+            users = await get_broadcast_users(group)
+            if not users:
+                admin_action_waiting.pop(ADMIN_ID, None)
+                await message.answer("❌ в выбранной группе нет пользователей.", reply_markup=admin_keyboard())
+                return
+
+            names = {
+                "all": "всем",
+                "active": "активным",
+                "trial": "trial",
+                "paid": "paid",
+                "expired": "истёкшим",
+            }
+            pending_broadcast[ADMIN_ID] = {
+                "source_chat_id": message.chat.id,
+                "message_id": message.message_id,
+                "user_ids": [int(user["tg_id"]) for user in users],
+                "group_name": names.get(group, group),
+            }
+            admin_action_waiting.pop(ADMIN_ID, None)
+
+            try:
+                await message.copy_to(ADMIN_ID)
+            except Exception:
+                pass
+            await message.answer(
+                "👆 сообщение для предпросмотра\n\n"
+                f"👥 получателей: {len(users)}\n\n"
+                "отправить?",
+                reply_markup=admin_confirm_keyboard("broadcast"),
+            )
+            return
+
+        if action == "personal_target":
+            target = (message.text or "").strip()
+            if target.startswith("@"):
+                user = await get_user_by_username(target[1:])
+            else:
+                try:
+                    user = await get_user(int(target))
+                except ValueError:
+                    user = None
+
+            if not user:
+                await message.answer("❌ пользователь не найден в базе.")
+                return
+
+            pending_personal[ADMIN_ID] = {"target_id": int(user["tg_id"])}
+            admin_action_waiting[ADMIN_ID] = "personal_message"
+            await message.answer(
+                f"👤 пользователь: @{user['username'] or '—'}\n"
+                f"🆔 id: {user['tg_id']}\n\n"
+                "теперь отправь сообщение.",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
+                ]),
+            )
+            return
+
+        if action == "personal_message":
+            job = pending_personal.get(ADMIN_ID)
+            if not job:
+                admin_action_waiting.pop(ADMIN_ID, None)
+                return
+
+            job.update({
+                "source_chat_id": message.chat.id,
+                "message_id": message.message_id,
+            })
+            admin_action_waiting.pop(ADMIN_ID, None)
+
+            try:
+                await message.copy_to(ADMIN_ID)
+            except Exception:
+                pass
+            await message.answer(
+                "👆 сообщение для предпросмотра\n\nотправить?",
+                reply_markup=admin_confirm_keyboard("personal"),
+            )
+            return
 
     if not message.text:
         return
@@ -1203,6 +1465,65 @@ async def admin_message_handler(message: Message):
 
 
 
+
+
+async def broadcast_worker(bot: Bot):
+    while True:
+        job = await broadcast_queue.get()
+        sent = 0
+        failed = 0
+        blocked = 0
+        total = len(job["user_ids"])
+
+        try:
+            for target_id in job["user_ids"]:
+                while True:
+                    try:
+                        await bot.copy_message(
+                            chat_id=target_id,
+                            from_chat_id=job["source_chat_id"],
+                            message_id=job["message_id"],
+                        )
+                        sent += 1
+                        break
+                    except TelegramForbiddenError:
+                        blocked += 1
+                        break
+                    except TelegramRetryAfter as e:
+                        await asyncio.sleep(e.retry_after)
+                        continue
+                    except Exception:
+                        failed += 1
+                        logging.exception(
+                            "broadcast send failed: tg_id=%s",
+                            target_id,
+                        )
+                        break
+
+                await asyncio.sleep(BROADCAST_DELAY)
+
+            await bot.send_message(
+                ADMIN_ID,
+                "✅ рассылка завершена\n\n"
+                f"👥 группа: {job['group_name']}\n"
+                f"📨 всего: {total}\n"
+                f"✅ отправлено: {sent}\n"
+                f"🚫 заблокировали бота: {blocked}\n"
+                f"❌ ошибок: {failed}",
+                reply_markup=admin_keyboard(),
+            )
+        except Exception:
+            logging.exception("broadcast worker failed")
+            try:
+                await bot.send_message(
+                    ADMIN_ID,
+                    "❌ рассылка аварийно остановлена. подробности в логе.",
+                    reply_markup=admin_keyboard(),
+                )
+            except Exception:
+                logging.exception("failed to notify admin about broadcast failure")
+        finally:
+            broadcast_queue.task_done()
 
 
 async def send_notification(bot: Bot, user, text: str, reply_markup=None) -> bool:
@@ -1401,15 +1722,18 @@ async def main():
     except Exception:
         logging.exception("failed to notify admin about bot startup")
 
-    worker_task = asyncio.create_task(notifications_worker(bot))
+    notification_worker_task = asyncio.create_task(notifications_worker(bot))
+    broadcast_worker_task = asyncio.create_task(broadcast_worker(bot))
     try:
         await dp.start_polling(bot)
     finally:
-        worker_task.cancel()
-        try:
-            await worker_task
-        except asyncio.CancelledError:
-            pass
+        notification_worker_task.cancel()
+        broadcast_worker_task.cancel()
+        for task in (notification_worker_task, broadcast_worker_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         await bot.session.close()
 
 
