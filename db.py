@@ -268,6 +268,38 @@ async def update_user(
         await db.commit()
 
 
+async def get_user_by_username(username: str):
+    username = username.lstrip("@").strip()
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM users WHERE lower(username) = lower(?) LIMIT 1",
+            (username,),
+        )
+        return await cursor.fetchone()
+
+
+async def get_broadcast_users(group: str = "all"):
+    now = int(time.time())
+    conditions = {
+        "all": "1 = 1",
+        "active": "status IN ('trial', 'paid') AND expires_at IS NOT NULL AND expires_at > ?",
+        "trial": "status = 'trial' AND expires_at IS NOT NULL AND expires_at > ?",
+        "paid": "status = 'paid' AND expires_at IS NOT NULL AND expires_at > ?",
+        "expired": "expires_at IS NOT NULL AND expires_at <= ?",
+    }
+    condition = conditions.get(group, conditions["all"])
+    params = () if group == "all" else (now,)
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            f"SELECT tg_id, username, status, expires_at FROM users WHERE {condition} ORDER BY tg_id",
+            params,
+        )
+        return await cursor.fetchall()
+
+
 async def get_promo(code: str):
     async with aiosqlite.connect(DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
