@@ -294,7 +294,17 @@ async def get_broadcast_users(group: str = "all"):
     async with aiosqlite.connect(DATABASE_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            f"SELECT tg_id, username, status, expires_at FROM users WHERE {condition} ORDER BY tg_id",
+            f"""
+            SELECT tg_id, username, status, expires_at
+            FROM users
+            WHERE ({condition})
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM notification_blocked_users b
+                  WHERE b.tg_id = users.tg_id
+              )
+            ORDER BY tg_id
+            """,
             params,
         )
         return await cursor.fetchall()
