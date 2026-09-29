@@ -54,6 +54,7 @@ from xui import (
     create_client,
     get_client,
     renew_client_by_sub_id,
+    add_days_to_client_by_sub_id,
     find_client,
     get_hwid_devices,
     delete_all_hwid_devices,
@@ -1371,7 +1372,7 @@ async def admin_message_handler(message: Message):
             return
 
         try:
-            updated = renew_client_by_sub_id(
+            updated = add_days_to_client_by_sub_id(
                 sub_id=user["sub_id"],
                 days=promo["reward_days"],
             )
