@@ -1,4 +1,5 @@
 import aiosqlite
+import time
 
 from config import DATABASE_PATH
 
@@ -308,6 +309,26 @@ async def get_broadcast_users(group: str = "all"):
             params,
         )
         return await cursor.fetchall()
+
+
+async def get_promos():
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM promo_codes ORDER BY code"
+        )
+        return await cursor.fetchall()
+
+
+async def delete_promo(code: str):
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute("DELETE FROM promo_uses WHERE code = ?", (code,))
+        cursor = await db.execute(
+            "DELETE FROM promo_codes WHERE code = ?",
+            (code,),
+        )
+        await db.commit()
+        return cursor.rowcount == 1
 
 
 async def get_promo(code: str):
