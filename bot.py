@@ -1397,6 +1397,31 @@ async def admin_message_handler(message: Message):
         )
 
         user_action_waiting.pop(message.from_user.id, None)
+
+        promo_after = await get_promo(code)
+        if promo_after and promo_after["max_uses"] > 0:
+            promo_remaining = max(
+                0,
+                promo_after["max_uses"] - promo_after["used_count"],
+            )
+            remaining_text = str(promo_remaining)
+        else:
+            remaining_text = "без ограничений"
+
+        username = f"@{message.from_user.username}" if message.from_user.username else "—"
+        try:
+            await message.bot.send_message(
+                ADMIN_ID,
+                "🎟 активирован промокод\n\n"
+                f"🎟 промокод: {code}\n"
+                f"🎁 добавлено: +{promo['reward_days']} дней\n"
+                f"👤 кому: {username}\n"
+                f"🆔 telegram id: {message.from_user.id}\n"
+                f"📦 остаток использований: {remaining_text}",
+            )
+        except Exception:
+            logging.exception("failed to notify admin about promo activation")
+
         await message.answer(
             f"✅ промокод применён!\n\n"
             f"🎁 начислено: +{promo['reward_days']} дней\n"
