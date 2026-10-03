@@ -10,6 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.config import Settings
 from app.database.crud import DeviceSnapshotRepository, UserRepository
 from app.database.models import User
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.database import async_session_factory
 from app.services.notification import NotificationService
 from app.services.xui_client import XuiClient
@@ -105,6 +106,7 @@ async def run_notification_check(
 
             await _check_devices(
                 session=session,
+                now=now,
                 user=user,
                 xui=xui,
                 notifications=notifications,
@@ -117,6 +119,7 @@ async def run_notification_check(
 async def _check_devices(
     *,
     session: AsyncSession,
+    now: datetime,
     user: User,
     xui: XuiClient,
     notifications: NotificationService,
