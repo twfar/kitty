@@ -39,7 +39,8 @@ class MaintenanceMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         if isinstance(event, Message):
-            if (event.text or "").split()[0:1] == ["/start"]:
+            command = (event.text or "").split(maxsplit=1)[0]
+            if command.split("@", 1)[0] == "/start":
                 message = await BotSettingRepository(session).get_value(
                     "maintenance_message",
                     "🔧 технические работы\n\nбот временно недоступен. попробуй позже.",
