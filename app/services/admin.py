@@ -8,7 +8,7 @@ from app.database.crud import (
     PromoCodeRepository,
     UserRepository,
 )
-from app.database.models import PromoCode
+from app.database.models import PromoCode, User
 from app.services.xui_client import XuiClient
 
 
@@ -110,7 +110,7 @@ class AdminService:
     async def find_user(
         self,
         identifier: str,
-    ):
+    ) -> User | None:
         value = identifier.strip()
         if value.startswith("@"):
             return await self._users.get_by_username(value)
