@@ -93,7 +93,7 @@ async def start(
     message: Message,
     subscription_service: SubscriptionService,
 ) -> None:
-    user = await subscription_service._users.get_by_tg_id(
+    user = await subscription_service.get_user(
         message.from_user.id
     )
 
@@ -146,7 +146,7 @@ async def connect(
 ) -> None:
     await callback.answer()
 
-    user = await subscription_service._users.get_by_tg_id(
+    user = await subscription_service.get_user(
         callback.from_user.id
     )
     if user is None:
@@ -170,7 +170,7 @@ async def devices(
 ) -> None:
     await callback.answer()
 
-    user = await subscription_service._users.get_by_tg_id(
+    user = await subscription_service.get_user(
         callback.from_user.id
     )
     if user is None:
@@ -214,7 +214,7 @@ async def delete_all_hwid(
 ) -> None:
     await callback.answer("удаляю устройства...")
 
-    user = await subscription_service._users.get_by_tg_id(
+    user = await subscription_service.get_user(
         callback.from_user.id
     )
     if user is None:
@@ -246,7 +246,7 @@ async def back_to_menu(
 ) -> None:
     await callback.answer()
 
-    user = await subscription_service._users.get_by_tg_id(
+    user = await subscription_service.get_user(
         callback.from_user.id
     )
     if user is None:
