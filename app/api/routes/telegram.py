@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hmac
+
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
 from fastapi import APIRouter, Request
@@ -18,6 +20,21 @@ async def telegram_webhook(
     request: Request,
 ) -> PlainTextResponse:
     """Принимает update Telegram и передаёт его Dispatcher."""
+
+    secret = settings.telegram_webhook_secret
+    if secret is not None:
+        received_secret = request.headers.get(
+            "X-Telegram-Bot-Api-Secret-Token",
+            "",
+        )
+        if not hmac.compare_digest(
+            received_secret,
+            secret.get_secret_value(),
+        ):
+            return PlainTextResponse(
+                "invalid secret",
+                status_code=403,
+            )
 
     dispatcher = request.app.state.dispatcher
     bot = request.app.state.bot
