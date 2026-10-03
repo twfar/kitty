@@ -37,16 +37,18 @@ async def lifespan(
     application.state.dispatcher = dispatcher
 
     try:
-        webhook_kwargs: dict[str, object] = {
-            "url": settings.telegram_webhook_url,
-            "allowed_updates": dispatcher.resolve_used_update_types(),
-        }
+        allowed_updates = dispatcher.resolve_used_update_types()
         if settings.telegram_webhook_secret is not None:
-            webhook_kwargs["secret_token"] = (
-                settings.telegram_webhook_secret.get_secret_value()
+            await bot.set_webhook(
+                url=settings.telegram_webhook_url,
+                allowed_updates=allowed_updates,
+                secret_token=settings.telegram_webhook_secret.get_secret_value(),
             )
-
-        await bot.set_webhook(**webhook_kwargs)
+        else:
+            await bot.set_webhook(
+                url=settings.telegram_webhook_url,
+                allowed_updates=allowed_updates,
+            )
         yield
     finally:
         try:
