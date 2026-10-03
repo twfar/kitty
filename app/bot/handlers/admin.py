@@ -176,17 +176,10 @@ async def personal_start(callback: CallbackQuery, state: FSMContext) -> None:
 async def personal_target(
     message: Message,
     state: FSMContext,
-    session: AsyncSession,
+    admin_service: AdminService,
 ) -> None:
     target = (message.text or "").strip()
-    user_repository = UserRepository(session)
-    if target.startswith("@"):
-        user = await user_repository.get_by_username(target)
-    else:
-        try:
-            user = await user_repository.get_by_tg_id(int(target))
-        except ValueError:
-            user = None
+    user = await admin_service.find_user(target)
     if user is None:
         await message.answer("❌ пользователь не найден.", reply_markup=_back())
         return
@@ -240,18 +233,10 @@ async def personal_message(
 async def promos_menu(
     callback: CallbackQuery,
     state: FSMContext,
-    session: AsyncSession,
-    settings: Settings,
-    xui_client: XuiClient,
-    user_repository: UserRepository,
+    admin_service: AdminService,
 ) -> None:
     await state.clear()
-    promos = _admin_service(
-        session,
-        settings,
-        xui_client,
-        user_repository,
-    )
+    promos = admin_service
     items = await promos.list_promos()
     await callback.answer()
 
@@ -319,9 +304,7 @@ async def promo_create(
     message: Message,
     state: FSMContext,
     session: AsyncSession,
-    settings: Settings,
-    xui_client: XuiClient,
-    user_repository: UserRepository,
+    admin_service: AdminService,
 ) -> None:
     parts = (message.text or "").split()
     if len(parts) != 4:
@@ -330,13 +313,7 @@ async def promo_create(
 
     try:
         code, days_raw, limit_raw, expiry_raw = parts
-        service = _admin_service(
-            session,
-            settings,
-            xui_client,
-            user_repository,
-        )
-        promo = await service.create_promo(
+        promo = await admin_service.create_promo(
             code=code,
             reward_days=int(days_raw),
             max_uses=int(limit_raw),
@@ -374,12 +351,9 @@ async def promo_delete(
     message: Message,
     state: FSMContext,
     session: AsyncSession,
-    settings: Settings,
-    xui_client: XuiClient,
-    user_repository: UserRepository,
+    admin_service: AdminService,
 ) -> None:
-    service = _admin_service(session, settings, xui_client, user_repository)
-    deleted = await service.delete_promo(message.text or "")
+    deleted = await admin_service.delete_promo(message.text or "")
     await session.commit()
     await state.clear()
     await message.answer(
@@ -391,13 +365,9 @@ async def promo_delete(
 @router.callback_query(lambda callback: callback.data == "admin:maintenance")
 async def maintenance_menu(
     callback: CallbackQuery,
-    session: AsyncSession,
-    settings: Settings,
-    xui_client: XuiClient,
-    user_repository: UserRepository,
+    admin_service: AdminService,
 ) -> None:
-    service = _admin_service(session, settings, xui_client, user_repository)
-    enabled, text = await service.get_maintenance()
+    enabled, text = await admin_service.get_maintenance()
     await callback.answer()
     await callback.message.edit_text(
         "🔧 технические работы\n\n"
@@ -422,22 +392,13 @@ async def maintenance_menu(
 async def maintenance_toggle(
     callback: CallbackQuery,
     session: AsyncSession,
-    settings: Settings,
-    xui_client: XuiClient,
-    user_repository: UserRepository,
+    admin_service: AdminService,
 ) -> None:
-    service = _admin_service(session, settings, xui_client, user_repository)
-    enabled, _ = await service.get_maintenance()
-    await service.set_maintenance(enabled=not enabled)
+    enabled, _ = await admin_service.get_maintenance()
+    await admin_service.set_maintenance(enabled=not enabled)
     await session.commit()
     await callback.answer("режим обновлён")
-    await maintenance_menu(
-        callback,
-        session,
-        settings,
-        xui_client,
-        user_repository,
-    )
+    await maintenance_menu(callback, admin_service)
 
 
 @router.callback_query(lambda callback: callback.data == "admin:maintenance:text")
@@ -458,12 +419,12 @@ async def maintenance_text(
     message: Message,
     state: FSMContext,
     session: AsyncSession,
-    settings: Settings,
-    xui_client: XuiClient,
-    user_repository: UserRepository,
+    admin_service: AdminService,
 ) -> None:
-    service = _admin_service(session, settings, xui_client, user_repository)
-    await service.set_maintenance(enabled=(await service.get_maintenance())[0], message=message.text or "")
+    await admin_service.set_maintenance(
+        enabled=(await admin_service.get_maintenance())[0],
+        message=message.text or "",
+    )
     await session.commit()
     await state.clear()
     await message.answer("✅ сообщение технических работ обновлено.", reply_markup=_keyboard())
@@ -474,11 +435,9 @@ async def clear_test(
     callback: CallbackQuery,
     session: AsyncSession,
     settings: Settings,
-    xui_client: XuiClient,
-    user_repository: UserRepository,
+    admin_service: AdminService,
 ) -> None:
-    service = _admin_service(session, settings, xui_client, user_repository)
-    await service.clear_test_account(settings.test_user_tg_id)
+    await admin_service.clear_test_account(settings.test_user_tg_id)
     await session.commit()
     await callback.answer("тестовый аккаунт очищен")
     await callback.message.edit_text(
