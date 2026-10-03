@@ -164,14 +164,37 @@ async def _check_devices(
                 or "неизвестное устройство"
             )
             name = str(name_value)
+            first_seen_value = (
+                device.get("firstSeen")
+                or device.get("firstSeenAt")
+                or int(now.timestamp())
+            )
+            first_seen = int(first_seen_value)
+            if first_seen > 10_000_000_000:
+                first_seen //= 1000
+            first_seen_text = datetime.fromtimestamp(
+                first_seen,
+                tz=timezone.utc,
+            ).strftime("%d.%m.%Y %H:%M")
             await notifications.send(
                 user=user,
                 notification_type="hwid_added",
                 marker=key,
                 text=(
-                    "📱 обнаружено новое устройство.\n\n"
+                    "📱 подключено новое устройство!\n\n"
                     f"устройство: {name}\n"
-                    f"использовано устройств: {len(current_keys)}."
+                    f"подключение: {first_seen_text}\n\n"
+                    "если это не ты — проверь список устройств."
+                ),
+                reply_markup=InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(
+                                text="📱 открыть устройства",
+                                callback_data="devices",
+                            )
+                        ]
+                    ]
                 ),
             )
 
