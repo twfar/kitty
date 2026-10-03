@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import aiohttp
+import logging
 from aiogram import Bot
 from fastapi import FastAPI, Request
 
@@ -64,12 +65,16 @@ async def lifespan(
     finally:
         try:
             scheduler.shutdown(wait=True)
-        finally:
-            try:
-                await taskiq_broker.shutdown()
-            finally:
-                try:
-                    await bot.delete_webhook(drop_pending_updates=False)
+        except Exception:
+            logging.exception("failed to stop APScheduler")
+
+        try:
+            await taskiq_broker.shutdown()
+        except Exception:
+            logging.exception("failed to stop Taskiq broker")
+
+        try:
+            await bot.delete_webhook(drop_pending_updates=False)
         finally:
             await dispatcher.storage.close()
             await bot.session.close()
