@@ -45,7 +45,10 @@ async def telegram_webhook(
         raise RuntimeError("bot is not initialized")
 
     try:
-        update = Update.model_validate(await request.json())
+        update = Update.model_validate(
+            await request.json(),
+            context={"bot": bot},
+        )
     except ValueError:
         return PlainTextResponse("invalid update", status_code=400)
 
