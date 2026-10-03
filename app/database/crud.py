@@ -108,6 +108,16 @@ class PromoCodeRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def get_all(self) -> list[PromoCode]:
+        result = await self.session.execute(
+            select(PromoCode).order_by(PromoCode.code)
+        )
+        return list(result.scalars().all())
+
+    async def delete(self, promo: PromoCode) -> None:
+        await self.session.delete(promo)
+        await self.session.flush()
+
     async def get_by_code(self, code: str) -> PromoCode | None:
         result = await self.session.execute(
             select(PromoCode).where(PromoCode.code == code)
@@ -120,12 +130,16 @@ class PromoCodeRepository:
         code: str,
         discount_percent: int | None = None,
         discount_amount: Decimal | None = None,
+        reward_days: int = 0,
         max_uses: int | None = None,
         expires_at: datetime | None = None,
     ) -> PromoCode:
         promo = PromoCode(
-            code=code, discount_percent=discount_percent,
-            discount_amount=discount_amount, max_uses=max_uses,
+            code=code,
+            discount_percent=discount_percent,
+            discount_amount=discount_amount,
+            reward_days=reward_days,
+            max_uses=max_uses,
             expires_at=expires_at,
         )
         self.session.add(promo)
