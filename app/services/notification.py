@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
-from aiogram.types import Message
+from aiogram.types import InlineKeyboardMarkup, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.crud import NotificationLogRepository, UserRepository
@@ -33,7 +33,7 @@ class NotificationService:
         notification_type: str,
         marker: str,
         text: str,
-        reply_markup: object | None = None,
+        reply_markup: InlineKeyboardMarkup | None = None,
     ) -> bool:
         if user.is_blocked:
             return False
@@ -53,7 +53,6 @@ class NotificationService:
             )
         except TelegramForbiddenError as exc:
             user.is_blocked = True
-            await self._users.set_status(user, "blocked")
             await self._logs.create(
                 user_id=user.id,
                 notification_type=notification_type,
@@ -113,7 +112,6 @@ class NotificationService:
             )
         except TelegramForbiddenError as exc:
             user.is_blocked = True
-            await self._users.set_status(user, "blocked")
             await self._logs.create(
                 user_id=user.id,
                 notification_type=notification_type,
