@@ -142,20 +142,10 @@ async def _check_devices(
         if key_value:
             current_keys.add(str(key_value))
 
-    latest = await snapshots.get_latest(user.id)
-    previous_keys: set[str] = set()
-    if latest is not None:
-        for device in latest.devices:
-            value = (
-                device.get("fingerprint")
-                or device.get("hwid")
-                or device.get("id")
-                or ""
-            )
-            if value:
-                previous_keys.add(str(value))
+    previous_keys = await snapshots.get_known_device_keys(user.id)
+    has_previous_snapshot = bool(previous_keys)
 
-    if latest is not None:
+    if has_previous_snapshot:
         for device in devices:
             key_value = (
                 device.get("fingerprint")
