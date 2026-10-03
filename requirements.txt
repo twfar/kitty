@@ -11,3 +11,4 @@ uvicorn[standard]>=0.30
 apscheduler>=3.11,<4.0
 taskiq>=0.12,<1.0
 taskiq-redis>=1.2,<2.0
+alembic>=1.13,<2.0
