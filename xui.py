@@ -314,8 +314,10 @@ def renew_client_by_sub_id(sub_id, days=30, device_limit=3):
 
     client_data = client.get("client", client)
 
-    # paid payment = exactly N full days from the moment of payment.
-    expiry_time = int(time.time() * 1000) + (
+    # extend from the current expiry; if already expired, extend from now.
+    now = int(time.time() * 1000)
+    current_expiry = int(client_data.get("expiryTime") or 0)
+    expiry_time = max(current_expiry, now) + (
         days * 24 * 60 * 60 * 1000
     )
 
