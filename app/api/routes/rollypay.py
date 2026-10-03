@@ -8,8 +8,6 @@ from aiogram import Bot
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import settings
 from app.database.crud import PaymentRepository
 from app.database.database import async_session_factory
@@ -141,6 +139,15 @@ async def rollypay_webhook(
                 "currency mismatch",
                 status_code=400,
             )
+
+        await _notify_admin(
+            bot,
+            "📩 webhook rollypay\n\n"
+            f"событие: {event.event_type or '—'}\n"
+            f"статус: {event.status}\n"
+            f"🆔 payment id: {event.payment_id}\n"
+            f"🧪 тест: {'да' if payment.test else 'нет'}",
+        )
 
         xui_client = XuiClient(
             request.app.state.http_session,
