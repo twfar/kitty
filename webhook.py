@@ -182,12 +182,18 @@ async def webhook(request):
                     )
                     await mark_referral_rewards_applied([payment_id])
                     applied = True
+            reward_text = (
+                f"🎁 реферальная награда: +{reward['reward_days']} дней"
+                + (
+                    " к подписке."
+                    if applied
+                    else ".\n\n⚠️ активной подписки нет — дни накоплены "
+                    "и автоматически добавятся к следующей подписке."
+                )
+            )
             await request.app["bot"].send_message(
                 reward["referrer_id"],
-                f"🎁 реферальная награда: +{reward['reward_days']} дней"
-                + (" к подписке." if applied else ".
-
-⚠️ активной подписки нет — дни накоплены и автоматически добавятся к следующей подписке.")
+                reward_text,
             )
     except Exception:
         logging.exception("failed to process referral reward")
