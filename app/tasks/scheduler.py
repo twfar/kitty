@@ -7,10 +7,9 @@ import aiohttp
 from aiogram import Bot
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.core.config import Settings
 from app.database.crud import DeviceSnapshotRepository, UserRepository
+from app.database.models import User
 from app.database.database import async_session_factory
 from app.services.notification import NotificationService
 from app.services.xui_client import XuiClient
@@ -118,7 +117,7 @@ async def run_notification_check(
 async def _check_devices(
     *,
     session: AsyncSession,
-    user,
+    user: User,
     xui: XuiClient,
     notifications: NotificationService,
     snapshots: DeviceSnapshotRepository,
