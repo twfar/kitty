@@ -9,3 +9,6 @@ redis>=5.0
 sqlalchemy>=2.0
 asyncpg>=0.29
 uvicorn[standard]>=0.30
+apscheduler>=3.11,<4.0
+taskiq>=0.12,<1.0
+taskiq-redis>=1.2,<2.0
