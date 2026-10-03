@@ -102,6 +102,9 @@ class PromoCode(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true", nullable=False
     )
+    reward_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
@@ -279,6 +282,9 @@ class NotificationLog(Base):
     )
     notification_type: Mapped[str] = mapped_column(
         String(64), nullable=False, index=True
+    )
+    marker: Mapped[str] = mapped_column(
+        String(255), nullable=False, default="", server_default=""
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     telegram_message_id: Mapped[int | None] = mapped_column(BigInteger)
