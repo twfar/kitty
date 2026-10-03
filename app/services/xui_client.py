@@ -324,6 +324,52 @@ class XuiClient(BaseHTTPClient):
         await self.update_client(email, payload)
         return True
 
+    async def add_days_to_client_by_sub_id(
+        self,
+        sub_id: str,
+        *,
+        days: int,
+    ) -> dict[str, object]:
+        """Добавляет дни к действующей подписке без изменения лимита устройств."""
+
+        if days <= 0:
+            raise ValueError("days must be positive")
+
+        client = await self.find_client_by_sub_id(sub_id)
+        if client is None:
+            raise XuiAPIError("subscription not found")
+
+        email = client.get("email")
+        if not isinstance(email, str) or not email:
+            raise XuiAPIError("client email not found")
+
+        client_data = client.get("client", client)
+        if not isinstance(client_data, dict):
+            raise XuiAPIError("invalid client payload")
+
+        now = int(time.time() * 1000)
+        current_expiry = int(client_data.get("expiryTime") or 0)
+        expiry_time = max(current_expiry, now) + days * 24 * 60 * 60 * 1000
+        device_limit = int(client_data.get("limitHwid") or 1)
+
+        payload = {
+            **client_data,
+            "email": client_data.get("email", email),
+            "subId": client_data.get("subId"),
+            "id": client_data.get("uuid") or client_data.get("id"),
+            "expiryTime": expiry_time,
+            "limitHwid": device_limit,
+            "enable": True,
+        }
+
+        await self.update_client(email, payload)
+
+        updated = await self.find_client(email)
+        if updated is None:
+            raise XuiAPIError("client disappeared after days addition")
+
+        return updated
+
     async def renew_client_by_sub_id(
         self,
         sub_id: str,
