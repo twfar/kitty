@@ -163,6 +163,10 @@ class Payment(TimestampMixin, Base):
         String(32), default="pending", server_default="pending", index=True
     )
     plan: Mapped[str | None] = mapped_column(String(64))
+    days: Mapped[int] = mapped_column(Integer, nullable=False, default=30, server_default="30")
+    device_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=3, server_default="3")
+    months: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    test: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     payment_url: Mapped[str | None] = mapped_column(Text)
     paid_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
@@ -222,6 +226,9 @@ class ReferralReward(TimestampMixin, Base):
     )
     status: Mapped[str] = mapped_column(
         String(32), default="pending", server_default="pending"
+    )
+    reward_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
     )
 
     user: Mapped[User] = relationship(back_populates="referral_rewards")

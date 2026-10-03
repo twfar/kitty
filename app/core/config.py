@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     rollypay_signing_secret: SecretStr | None = None
 
     webhook_base_url: AnyHttpUrl
+    telegram_webhook_secret: SecretStr | None = None
     telegram_webhook_path: str = "/telegram/webhook"
     rollypay_webhook_path: str = "/rollypay/webhook"
 

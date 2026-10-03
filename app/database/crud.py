@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import (
@@ -177,18 +177,40 @@ class PaymentRepository:
         amount: Decimal,
         currency: str,
         plan: str | None,
+        days: int = 30,
+        device_limit: int = 3,
+        months: int = 1,
+        test: bool = False,
         external_id: str | None = None,
         payment_url: str | None = None,
         raw_payload: dict[str, object] | None = None,
     ) -> Payment:
         payment = Payment(
-            user_id=user.id, amount=amount, currency=currency,
-            plan=plan, external_id=external_id,
-            payment_url=payment_url, raw_payload=raw_payload,
+            user_id=user.id,
+            amount=amount,
+            currency=currency,
+            plan=plan,
+            days=days,
+            device_limit=device_limit,
+            months=months,
+            test=test,
+            external_id=external_id,
+            payment_url=payment_url,
+            raw_payload=raw_payload,
         )
         self.session.add(payment)
         await self.session.flush()
         return payment
+
+    async def get_by_external_id_for_update(
+        self, external_id: str
+    ) -> Payment | None:
+        result = await self.session.execute(
+            select(Payment)
+            .where(Payment.external_id == external_id)
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
 
     async def set_status(
         self,
@@ -209,6 +231,45 @@ class ReferralRepository:
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+
+    async def get_by_payment_id(
+        self, payment_id: int
+    ) -> ReferralReward | None:
+        result = await self.session.execute(
+            select(ReferralReward).where(ReferralReward.payment_id == payment_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def count_rewards_for_referred_user(
+        self, referred_user_id: int
+    ) -> int:
+        statement = (
+            select(func.count(ReferralReward.id))
+            .join(Referral, ReferralReward.referral_id == Referral.id)
+            .where(Referral.referred_user_id == referred_user_id)
+        )
+        result = await self.session.execute(statement)
+        return int(result.scalar_one())
+
+    async def get_pending_for_user(
+        self, user_id: int
+    ) -> list[ReferralReward]:
+        result = await self.session.execute(
+            select(ReferralReward)
+            .where(
+                ReferralReward.user_id == user_id,
+                ReferralReward.status == "pending",
+            )
+            .order_by(ReferralReward.created_at)
+        )
+        return list(result.scalars().all())
+
+    async def mark_applied(
+        self, reward: ReferralReward
+    ) -> ReferralReward:
+        reward.status = "applied"
+        await self.session.flush()
+        return reward
 
     async def get_by_referred_user(
         self, user_id: int
@@ -235,12 +296,17 @@ class ReferralRepository:
         user_id: int,
         amount: Decimal,
         currency: str = "RUB",
+        reward_days: int = 0,
         referral_id: int | None = None,
         payment_id: int | None = None,
     ) -> ReferralReward:
         reward = ReferralReward(
-            user_id=user_id, referral_id=referral_id,
-            payment_id=payment_id, amount=amount, currency=currency,
+            user_id=user_id,
+            referral_id=referral_id,
+            payment_id=payment_id,
+            amount=amount,
+            currency=currency,
+            reward_days=reward_days,
         )
         self.session.add(reward)
         await self.session.flush()
