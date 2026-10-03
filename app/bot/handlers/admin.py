@@ -5,12 +5,19 @@ from datetime import datetime, timezone
 from aiogram import BaseMiddleware, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.states.admin import AdminStates
 from app.core.config import Settings
+from app.database.crud import UserRepository
 from app.services.admin import AdminService
+from app.services.notification import NotificationService
 from app.services.xui_client import XuiClient
 
 
@@ -21,10 +28,10 @@ class AdminOnlyMiddleware(BaseMiddleware):
     """Пропускает административные события только владельцу бота."""
 
     async def __call__(self, handler, event, data):
-        settings = data["settings"]
+        settings = data.get("settings")
+        user = getattr(event, "from_user", None)
         if not isinstance(settings, Settings):
             return None
-        user = getattr(event, "from_user", None)
         if user is None or user.id != settings.admin_id:
             if isinstance(event, CallbackQuery):
                 await event.answer("доступ запрещён", show_alert=True)
@@ -77,7 +84,7 @@ def _admin_service(
     session: AsyncSession,
     settings: Settings,
     xui_client: XuiClient,
-    user_repository,
+    user_repository: UserRepository,
 ) -> AdminService:
     from app.database.crud import BotSettingRepository, PromoCodeRepository
 
@@ -169,8 +176,318 @@ async def personal_start(callback: CallbackQuery, state: FSMContext) -> None:
 async def personal_target(
     message: Message,
     state: FSMContext,
+    session: AsyncSession,
+) -> None:
+    target = (message.text or "").strip()
+    service = AdminService(
+        settings=message.bot.get("settings") if False else None,  # type: ignore[arg-type]
+        user_repository=UserRepository(session),
+        promo_repository=None,  # type: ignore[arg-type]
+        setting_repository=None,  # type: ignore[arg-type]
+        xui_client=None,  # type: ignore[arg-type]
+    )
+    user = await service.find_user(target)
+    if user is None:
+        await message.answer("❌ пользователь не найден.", reply_markup=_back())
+        return
+
+    await state.set_state(AdminStates.waiting_personal_message)
+    await state.update_data(target_tg_id=user.tg_id)
+    await message.answer(
+        f"👤 пользователь: @{user.username or '—'}\n"
+        f"🆔 id: {user.tg_id}\n\n"
+        "теперь отправь сообщение.",
+        reply_markup=_back(),
+    )
+
+
+@router.message(AdminStates.waiting_personal_message)
+async def personal_message(
+    message: Message,
+    state: FSMContext,
+    session: AsyncSession,
+) -> None:
+    data = await state.get_data()
+    target_tg_id = data.get("target_tg_id")
+    if not isinstance(target_tg_id, int):
+        await state.clear()
+        await message.answer("❌ цель сообщения потеряна.", reply_markup=_keyboard())
+        return
+
+    user = await UserRepository(session).get_by_tg_id(target_tg_id)
+    if user is None:
+        await state.clear()
+        await message.answer("❌ пользователь не найден.", reply_markup=_keyboard())
+        return
+
+    service = NotificationService(session=session, bot=message.bot)
+    delivered = await service.copy(
+        user=user,
+        notification_type="admin_personal",
+        marker=str(message.message_id),
+        source_chat_id=message.chat.id,
+        source_message_id=message.message_id,
+    )
+    await session.commit()
+    await state.clear()
+    await message.answer(
+        "✅ сообщение отправлено." if delivered else "❌ сообщение не отправлено.",
+        reply_markup=_keyboard(),
+    )
+
+
+@router.callback_query(lambda callback: callback.data == "admin:promos")
+async def promos_menu(
+    callback: CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+) -> None:
+    await state.clear()
+    promos = await _admin_service_from_callback(callback, session)
+    items = await promos.list_promos()
+    await callback.answer()
+
+    if not items:
+        text = "🎟 промокоды\n\nпромокодов пока нет."
+    else:
+        lines = ["🎟 промокоды", ""]
+        now = datetime.now(timezone.utc)
+        for promo in items:
+            limit = "∞" if promo.max_uses is None else str(promo.max_uses)
+            expires = (
+                "без срока"
+                if promo.expires_at is None
+                else promo.expires_at.astimezone(timezone.utc).strftime(
+                    "%d.%m.%Y %H:%M"
+                )
+            )
+            status = "активен"
+            if not promo.is_active:
+                status = "выключен"
+            elif promo.expires_at is not None and promo.expires_at <= now:
+                status = "истёк"
+            elif promo.max_uses is not None and promo.uses_count >= promo.max_uses:
+                status = "лимит исчерпан"
+            lines.append(
+                f"🎟 {promo.code} — +{promo.reward_days} д.\n"
+                f"использований: {promo.uses_count} / {limit}\n"
+                f"срок: {expires}\n"
+                f"статус: {status}"
+            )
+        text = "\n\n".join(lines)
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="➕ создать", callback_data="admin:promo:create")],
+                [InlineKeyboardButton(text="🗑 удалить", callback_data="admin:promo:delete")],
+                [InlineKeyboardButton(text="🔙 назад", callback_data="admin:back")],
+            ]
+        ),
+    )
+
+
+async def _admin_service_from_callback(
+    callback: CallbackQuery,
+    session: AsyncSession,
+) -> AdminService:
+    from app.database.crud import BotSettingRepository, PromoCodeRepository
+
+    settings = callback.bot.get("settings") if False else None
+    del settings
+    raise RuntimeError("use injected admin_service")
+
+
+@router.callback_query(lambda callback: callback.data == "admin:promo:create")
+async def promo_create_start(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    await state.set_state(AdminStates.waiting_create_promo)
+    await callback.answer()
+    await callback.message.edit_text(
+        "🎟 создание промокода\n\n"
+        "отправь одной строкой:\n"
+        "КОД ДНИ ЛИМИТ СРОК_В_ДНЯХ\n\n"
+        "пример: KITTY7 7 10 30\n"
+        "лимит 0 — без ограничений\n"
+        "срок 0 — бессрочно.",
+        reply_markup=_back(),
+    )
+
+
+@router.message(AdminStates.waiting_create_promo)
+async def promo_create(
+    message: Message,
+    state: FSMContext,
+    session: AsyncSession,
     settings: Settings,
     xui_client: XuiClient,
-    user_repository,
+    user_repository: UserRepository,
 ) -> None:
-    session = message.bot.get_current?  # type: ignore[attr-defined]
+    parts = (message.text or "").split()
+    if len(parts) != 4:
+        await message.answer("❌ формат: КОД ДНИ ЛИМИТ СРОК_В_ДНЯХ")
+        return
+
+    try:
+        code, days_raw, limit_raw, expiry_raw = parts
+        service = _admin_service(
+            session,
+            settings,
+            xui_client,
+            user_repository,
+        )
+        promo = await service.create_promo(
+            code=code,
+            reward_days=int(days_raw),
+            max_uses=int(limit_raw),
+            expires_in_days=int(expiry_raw) or None,
+        )
+        await session.commit()
+    except ValueError as exc:
+        await message.answer(f"❌ {exc}")
+        return
+
+    await state.clear()
+    await message.answer(
+        f"✅ промокод {promo.code} создан.\n"
+        f"дни: {promo.reward_days}\n"
+        f"лимит: {promo.max_uses or '∞'}",
+        reply_markup=_keyboard(),
+    )
+
+
+@router.callback_query(lambda callback: callback.data == "admin:promo:delete")
+async def promo_delete_start(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    await state.set_state(AdminStates.waiting_delete_promo)
+    await callback.answer()
+    await callback.message.edit_text(
+        "🗑 отправь код промокода, который нужно удалить.",
+        reply_markup=_back(),
+    )
+
+
+@router.message(AdminStates.waiting_delete_promo)
+async def promo_delete(
+    message: Message,
+    state: FSMContext,
+    session: AsyncSession,
+    settings: Settings,
+    xui_client: XuiClient,
+    user_repository: UserRepository,
+) -> None:
+    service = _admin_service(session, settings, xui_client, user_repository)
+    deleted = await service.delete_promo(message.text or "")
+    await session.commit()
+    await state.clear()
+    await message.answer(
+        "✅ промокод удалён." if deleted else "❌ промокод не найден.",
+        reply_markup=_keyboard(),
+    )
+
+
+@router.callback_query(lambda callback: callback.data == "admin:maintenance")
+async def maintenance_menu(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    settings: Settings,
+    xui_client: XuiClient,
+    user_repository: UserRepository,
+) -> None:
+    service = _admin_service(session, settings, xui_client, user_repository)
+    enabled, text = await service.get_maintenance()
+    await callback.answer()
+    await callback.message.edit_text(
+        "🔧 технические работы\n\n"
+        f"статус: {'включены' if enabled else 'выключены'}\n\n"
+        f"сообщение:\n{text}",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔴 выключить" if enabled else "🟢 включить",
+                        callback_data="admin:maintenance:toggle",
+                    )
+                ],
+                [InlineKeyboardButton(text="✏️ изменить сообщение", callback_data="admin:maintenance:text")],
+                [InlineKeyboardButton(text="🔙 назад", callback_data="admin:back")],
+            ]
+        ),
+    )
+
+
+@router.callback_query(lambda callback: callback.data == "admin:maintenance:toggle")
+async def maintenance_toggle(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    settings: Settings,
+    xui_client: XuiClient,
+    user_repository: UserRepository,
+) -> None:
+    service = _admin_service(session, settings, xui_client, user_repository)
+    enabled, _ = await service.get_maintenance()
+    await service.set_maintenance(enabled=not enabled)
+    await session.commit()
+    await callback.answer("режим обновлён")
+    await maintenance_menu(
+        callback,
+        session,
+        settings,
+        xui_client,
+        user_repository,
+    )
+
+
+@router.callback_query(lambda callback: callback.data == "admin:maintenance:text")
+async def maintenance_text_start(
+    callback: CallbackQuery,
+    state: FSMContext,
+) -> None:
+    await state.set_state(AdminStates.waiting_maintenance_message)
+    await callback.answer()
+    await callback.message.edit_text(
+        "✏️ отправь новое сообщение технических работ.",
+        reply_markup=_back(),
+    )
+
+
+@router.message(AdminStates.waiting_maintenance_message)
+async def maintenance_text(
+    message: Message,
+    state: FSMContext,
+    session: AsyncSession,
+    settings: Settings,
+    xui_client: XuiClient,
+    user_repository: UserRepository,
+) -> None:
+    service = _admin_service(session, settings, xui_client, user_repository)
+    await service.set_maintenance(enabled=(await service.get_maintenance())[0], message=message.text or "")
+    await session.commit()
+    await state.clear()
+    await message.answer("✅ сообщение технических работ обновлено.", reply_markup=_keyboard())
+
+
+@router.callback_query(lambda callback: callback.data == "admin:clear_test")
+async def clear_test(
+    callback: CallbackQuery,
+    session: AsyncSession,
+    settings: Settings,
+    xui_client: XuiClient,
+    user_repository: UserRepository,
+) -> None:
+    service = _admin_service(session, settings, xui_client, user_repository)
+    await service.clear_test_account(settings.test_user_tg_id)
+    await session.commit()
+    await callback.answer("тестовый аккаунт очищен")
+    await callback.message.edit_text(
+        f"✅ тестовый аккаунт {settings.test_user_tg_id} очищен.",
+        reply_markup=_keyboard(),
+    )
+
+
+__all__ = ["router"]
