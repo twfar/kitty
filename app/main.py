@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import aiohttp
+import logging
 from aiogram import Bot
 from fastapi import FastAPI, Request
 
@@ -14,6 +15,8 @@ from app.bot.runtime import BotRuntime
 from app.core.config import settings
 from app.database.database import async_session_factory, close_database
 from app.services.rollypay_client import RollyPayClient
+from app.tasks.broadcast import broker as taskiq_broker
+from app.tasks.scheduler import create_scheduler
 from app.services.xui_client import XuiClient
 
 
@@ -31,12 +34,21 @@ async def lifespan(
         session_factory=async_session_factory,
     )
     dispatcher = create_dispatcher(runtime)
+    scheduler = create_scheduler(
+        bot=bot,
+        http_session=http_session,
+        settings=settings,
+    )
 
     application.state.http_session = http_session
     application.state.bot = bot
     application.state.dispatcher = dispatcher
+    application.state.scheduler = scheduler
+    application.state.taskiq_broker = taskiq_broker
 
     try:
+        await taskiq_broker.startup()
+        scheduler.start()
         allowed_updates = dispatcher.resolve_used_update_types()
         if settings.telegram_webhook_secret is not None:
             await bot.set_webhook(
@@ -51,6 +63,16 @@ async def lifespan(
             )
         yield
     finally:
+        try:
+            scheduler.shutdown(wait=True)
+        except Exception:
+            logging.exception("failed to stop APScheduler")
+
+        try:
+            await taskiq_broker.shutdown()
+        except Exception:
+            logging.exception("failed to stop Taskiq broker")
+
         try:
             await bot.delete_webhook(drop_pending_updates=False)
         finally:

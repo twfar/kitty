@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     trial_hours: PositiveInt = 24
     paid_subscription_days: PositiveInt = 30
     device_limit: PositiveInt = 3
+    test_user_tg_id: int = 8772456974
+    broadcast_delay: float = 0.06
+    taskiq_queue_name: str = "kitty:broadcasts"
     subscription_base_url: AnyHttpUrl
 
     rollypay_base_url: AnyHttpUrl = "https://rollypay.io"

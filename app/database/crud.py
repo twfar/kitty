@@ -85,6 +85,59 @@ class UserRepository:
         await self.session.flush()
         return user
 
+    async def list_active_subscriptions(self) -> list[User]:
+        statement = select(User).where(
+            User.status.in_(("trial", "paid")),
+            User.expires_at.is_not(None),
+            User.is_blocked.is_(False),
+        )
+        result = await self.session.execute(
+            statement.order_by(User.tg_id)
+        )
+        return list(result.scalars().all())
+
+    async def list_for_broadcast(self, group: str) -> list[User]:
+        now = datetime.now()
+        statement = select(User).where(User.is_blocked.is_(False))
+        if group == "active":
+            statement = statement.where(
+                User.status.in_(("trial", "paid")),
+                User.expires_at.is_not(None),
+                User.expires_at > now,
+            )
+        elif group == "trial":
+            statement = statement.where(
+                User.status == "trial",
+                User.expires_at.is_not(None),
+                User.expires_at > now,
+            )
+        elif group == "paid":
+            statement = statement.where(
+                User.status == "paid",
+                User.expires_at.is_not(None),
+                User.expires_at > now,
+            )
+        elif group == "expired":
+            statement = statement.where(
+                User.expires_at.is_not(None),
+                User.expires_at <= now,
+            )
+        result = await self.session.execute(statement.order_by(User.tg_id))
+        return list(result.scalars().all())
+
+    async def get_by_username(self, username: str) -> User | None:
+        normalized = username.removeprefix("@").lower()
+        result = await self.session.execute(
+            select(User).where(func.lower(User.username) == normalized)
+        )
+        return result.scalar_one_or_none()
+
+    async def delete_by_tg_id(self, tg_id: int) -> None:
+        user = await self.get_by_tg_id(tg_id)
+        if user is not None:
+            await self.session.delete(user)
+            await self.session.flush()
+
     async def list_expiring(
         self,
         *,
@@ -108,6 +161,16 @@ class PromoCodeRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def get_all(self) -> list[PromoCode]:
+        result = await self.session.execute(
+            select(PromoCode).order_by(PromoCode.code)
+        )
+        return list(result.scalars().all())
+
+    async def delete(self, promo: PromoCode) -> None:
+        await self.session.delete(promo)
+        await self.session.flush()
+
     async def get_by_code(self, code: str) -> PromoCode | None:
         result = await self.session.execute(
             select(PromoCode).where(PromoCode.code == code)
@@ -120,12 +183,16 @@ class PromoCodeRepository:
         code: str,
         discount_percent: int | None = None,
         discount_amount: Decimal | None = None,
+        reward_days: int = 0,
         max_uses: int | None = None,
         expires_at: datetime | None = None,
     ) -> PromoCode:
         promo = PromoCode(
-            code=code, discount_percent=discount_percent,
-            discount_amount=discount_amount, max_uses=max_uses,
+            code=code,
+            discount_percent=discount_percent,
+            discount_amount=discount_amount,
+            reward_days=reward_days,
+            max_uses=max_uses,
             expires_at=expires_at,
         )
         self.session.add(promo)
@@ -357,6 +424,25 @@ class DeviceSnapshotRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def get_known_device_keys(self, user_id: int) -> set[str]:
+        result = await self.session.execute(
+            select(DeviceSnapshot.devices).where(
+                DeviceSnapshot.user_id == user_id
+            )
+        )
+        known: set[str] = set()
+        for snapshot in result.scalars():
+            for device in snapshot:
+                value = (
+                    device.get("fingerprint")
+                    or device.get("hwid")
+                    or device.get("id")
+                    or ""
+                )
+                if value:
+                    known.add(str(value))
+        return known
+
     async def create(
         self,
         *,
@@ -380,11 +466,29 @@ class NotificationLogRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
+    async def was_sent(
+        self,
+        *,
+        user_id: int,
+        notification_type: str,
+        marker: str,
+    ) -> bool:
+        result = await self.session.execute(
+            select(NotificationLog.id).where(
+                NotificationLog.user_id == user_id,
+                NotificationLog.notification_type == notification_type,
+                NotificationLog.marker == marker,
+                NotificationLog.status == "sent",
+            )
+        )
+        return result.scalar_one_or_none() is not None
+
     async def create(
         self,
         *,
         user_id: int | None,
         notification_type: str,
+        marker: str,
         status: str,
         telegram_message_id: int | None = None,
         error_message: str | None = None,
@@ -393,6 +497,7 @@ class NotificationLogRepository:
         log = NotificationLog(
             user_id=user_id,
             notification_type=notification_type,
+            marker=marker,
             status=status,
             telegram_message_id=telegram_message_id,
             error_message=error_message,
