@@ -25,6 +25,11 @@ class SubscriptionService:
         self._xui = xui_client
         self._settings = settings
 
+    async def get_user(self, tg_id: int) -> User | None:
+        """Возвращает пользователя по Telegram ID."""
+
+        return await self._users.get_by_tg_id(tg_id)
+
     async def grant_trial(
         self,
         *,
