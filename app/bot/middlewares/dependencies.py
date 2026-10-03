@@ -8,7 +8,12 @@ from aiogram import BaseMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
-from app.database.crud import UserRepository
+from app.database.crud import (
+    BotSettingRepository,
+    PromoCodeRepository,
+    UserRepository,
+)
+from app.services.admin import AdminService
 from app.services.rollypay_client import RollyPayClient
 from app.services.subscription import SubscriptionService
 from app.services.xui_client import XuiClient
@@ -51,6 +56,13 @@ class DependenciesMiddleware(BaseMiddleware):
         data["xui_client"] = xui_client
         data["rollypay_client"] = rollypay_client
         data["user_repository"] = user_repository
+        data["admin_service"] = AdminService(
+            settings=self._settings,
+            user_repository=user_repository,
+            promo_repository=PromoCodeRepository(session),
+            setting_repository=BotSettingRepository(session),
+            xui_client=xui_client,
+        )
         data["subscription_service"] = SubscriptionService(
             user_repository=user_repository,
             xui_client=xui_client,
