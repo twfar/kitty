@@ -102,9 +102,7 @@ class AdminService:
         return enabled == "1", message or ""
 
     async def clear_test_account(self, tg_id: int) -> None:
-        user = await self._users.get_by_tg_id(tg_id)
-        if user is not None:
-            await self._xui.delete_client_by_tg_id(tg_id)
+        await self._xui.delete_client_by_tg_id(tg_id)
         await self._users.delete_by_tg_id(tg_id)
 
     async def find_user(
