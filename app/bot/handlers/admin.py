@@ -179,14 +179,14 @@ async def personal_target(
     session: AsyncSession,
 ) -> None:
     target = (message.text or "").strip()
-    service = AdminService(
-        settings=message.bot.get("settings") if False else None,  # type: ignore[arg-type]
-        user_repository=UserRepository(session),
-        promo_repository=None,  # type: ignore[arg-type]
-        setting_repository=None,  # type: ignore[arg-type]
-        xui_client=None,  # type: ignore[arg-type]
-    )
-    user = await service.find_user(target)
+    user_repository = UserRepository(session)
+    if target.startswith("@"):
+        user = await user_repository.get_by_username(target)
+    else:
+        try:
+            user = await user_repository.get_by_tg_id(int(target))
+        except ValueError:
+            user = None
     if user is None:
         await message.answer("❌ пользователь не найден.", reply_markup=_back())
         return
@@ -241,9 +241,17 @@ async def promos_menu(
     callback: CallbackQuery,
     state: FSMContext,
     session: AsyncSession,
+    settings: Settings,
+    xui_client: XuiClient,
+    user_repository: UserRepository,
 ) -> None:
     await state.clear()
-    promos = await _admin_service_from_callback(callback, session)
+    promos = _admin_service(
+        session,
+        settings,
+        xui_client,
+        user_repository,
+    )
     items = await promos.list_promos()
     await callback.answer()
 
@@ -286,17 +294,6 @@ async def promos_menu(
             ]
         ),
     )
-
-
-async def _admin_service_from_callback(
-    callback: CallbackQuery,
-    session: AsyncSession,
-) -> AdminService:
-    from app.database.crud import BotSettingRepository, PromoCodeRepository
-
-    settings = callback.bot.get("settings") if False else None
-    del settings
-    raise RuntimeError("use injected admin_service")
 
 
 @router.callback_query(lambda callback: callback.data == "admin:promo:create")
