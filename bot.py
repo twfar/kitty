@@ -191,12 +191,12 @@ def main_keyboard(referral_count=0):
     ])
 
 
-def subscription_keyboard(subscription_url: str):
+def subscription_keyboard(subscription_page_url: str):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="📋 скопировать ссылку",
-            copy_text=CopyTextButton(text=subscription_url),
-            style=ButtonStyle.PRIMARY,
+            text="🔗 подключиться",
+            url=subscription_page_url,
+            style=ButtonStyle.SUCCESS,
         )],
         [
             InlineKeyboardButton(text="📱 устройства", callback_data="devices"),
@@ -329,18 +329,14 @@ async def send_subscription_info(message: Message, user):
     except Exception:
         used = 0
 
+    subscription_page_url = f"https://87.121.82.175:2096/s/{client_data.get('subId')}"
     await edit_menu(message, 
         "🔗 твоя подписка\n\n"
         "📱 устройства: "
         f"{used} / {limit}\n"
         f"⏳ осталось: {format_remaining(data['expires_at'])}\n\n"
-        "📲 как подключить в happ:\n"
-        "1. нажми «скопировать ссылку» ниже\n"
-        "2. открой happ и нажми «+»\n"
-        "3. выбери добавление подписки / импорт из буфера\n"
-        "4. вставь ссылку и сохрани\n"
-        "5. выбери сервер и подключись",
-        reply_markup=subscription_keyboard(data["subscription_url"]),
+        "📲 нажми «подключиться», чтобы открыть страницу подписки.",
+        reply_markup=subscription_keyboard(subscription_page_url),
     )
 
 
@@ -495,13 +491,23 @@ async def grant_trial(callback: CallbackQuery):
         f"🔗 sub id: {client['sub_id']}",
     )
 
+    trial_page_url = f"https://87.121.82.175:2096/s/{client['sub_id']}"
     await edit_menu(
         callback.message,
         "🎁 trial активирован на 24 часа!\n\n"
-        "🔗 json-подписка:\n"
-        f"{client['subscription_url']}\n\n"
-        "добавь эту ссылку в happ или другой поддерживаемый vpn-клиент.",
-        reply_markup=main_keyboard(),
+        "нажми «подключиться», чтобы открыть страницу подписки.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="🔗 подключиться",
+                url=trial_page_url,
+                style=ButtonStyle.SUCCESS,
+            )],
+            [InlineKeyboardButton(
+                text="🔙 главное меню",
+                callback_data="back_to_menu",
+                style=ButtonStyle.PRIMARY,
+            )],
+        ]),
     )
 
 
