@@ -5,8 +5,6 @@ import logging
 
 from aiogram import Bot
 from taskiq_redis import RedisStreamBroker
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
-
 from app.core.config import settings
 from app.database.crud import UserRepository
 from app.database.database import async_session_factory
@@ -31,10 +29,8 @@ async def broadcast_task(
     """Надёжная массовая рассылка через Redis Stream."""
 
     bot = Bot(token=settings.bot_token.get_secret_value())
-    session_factory: async_sessionmaker[AsyncSession] = async_session_factory
-
     try:
-        async with session_factory() as session:
+        async with async_session_factory() as session:
             users = await UserRepository(session).list_for_broadcast(group)
             notifications = NotificationService(
                 session=session,
