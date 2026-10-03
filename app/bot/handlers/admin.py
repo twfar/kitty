@@ -366,9 +366,12 @@ async def promo_delete(
 async def maintenance_menu(
     callback: CallbackQuery,
     admin_service: AdminService,
+    *,
+    answer: bool = True,
 ) -> None:
     enabled, text = await admin_service.get_maintenance()
-    await callback.answer()
+    if answer:
+        await callback.answer()
     await callback.message.edit_text(
         "🔧 технические работы\n\n"
         f"статус: {'включены' if enabled else 'выключены'}\n\n"
@@ -398,7 +401,7 @@ async def maintenance_toggle(
     await admin_service.set_maintenance(enabled=not enabled)
     await session.commit()
     await callback.answer("режим обновлён")
-    await maintenance_menu(callback, admin_service)
+    await maintenance_menu(callback, admin_service, answer=False)
 
 
 @router.callback_query(lambda callback: callback.data == "admin:maintenance:text")
