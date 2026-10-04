@@ -593,6 +593,18 @@ async def register_referral_payment(payment_id: str, referred_id: int):
             return None
         return {"referrer_id": referral["referrer_id"], "reward_days": reward_days, "months": months}
 
+async def mark_referral_rewards_applied(payment_ids):
+    if not payment_ids:
+        return
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        placeholders = ",".join("?" for _ in payment_ids)
+        await db.execute(
+            f"UPDATE referral_rewards SET applied = 1 WHERE payment_id IN ({placeholders})",
+            tuple(payment_ids),
+        )
+        await db.commit()
+
+
 # notifications
 
 async def is_notification_blocked(tg_id: int) -> bool:
