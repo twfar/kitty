@@ -160,40 +160,48 @@ async def webhook(request):
     await update_payment_status(payment_id, "paid")
 
     try:
-        reward = await register_referral_payment(payment_id, payment["tg_id"])
+        reward = await register_referral_payment(
+            payment_id,
+            payment["tg_id"],
+        )
         if reward:
             referrer = await get_user(reward["referrer_id"])
             applied = False
+
             if referrer and referrer["sub_id"]:
-                referrer_client = get_client(tg_id=reward["referrer_id"])
-                referrer_data = referrer_client.get("client", referrer_client) if referrer_client else {}
-                if int(referrer_data.get("expiryTime") or 0) // 1000 > int(time.time()):
-                    updated_referrer = add_days_to_client_by_sub_id(referrer["sub_id"], reward["reward_days"])
-                    referrer_expiry = int(updated_referrer.get("expiryTime", 0)) // 1000
+                try:
+                    updated_referrer = add_days_to_client_by_sub_id(
+                        referrer["sub_id"],
+                        reward["reward_days"],
+                    )
+                    referrer_expiry = (
+                        int(updated_referrer.get("expiryTime", 0)) // 1000
+                    )
                     await update_user(
                         tg_id=referrer["tg_id"],
                         username=referrer["username"],
                         email=referrer["email"],
                         sub_id=referrer["sub_id"],
-                        subscription_url=f"https://87.121.82.175:2096/jsnn/{referrer['sub_id']}",
+                        subscription_url=(
+                            f"https://87.121.82.175:2096/jsnn/"
+                            f"{referrer['sub_id']}"
+                        ),
                         status=referrer["status"],
                         created_at=referrer["created_at"],
                         expires_at=referrer_expiry,
                     )
                     await mark_referral_rewards_applied([payment_id])
                     applied = True
-            reward_text = (
-                f"🎁 реферальная награда: +{reward['reward_days']} дней"
-                + (
-                    " к подписке."
-                    if applied
-                    else ".\n\n⚠️ активной подписки нет — дни накоплены "
-                    "и автоматически добавятся к следующей подписке."
-                )
-            )
+                except Exception:
+                    logging.exception(
+                        "failed to apply referral payment reward"
+                    )
+
             await request.app["bot"].send_message(
                 reward["referrer_id"],
-                reward_text,
+                "🎉 твой реферал оплатил подписку "
+                f"({reward['months']} мес.)!\n"
+                f"🎁 тебе начислено +{reward['reward_days']} дней к подписке.",
             )
     except Exception:
         logging.exception("failed to process referral reward")
