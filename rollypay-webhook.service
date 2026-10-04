@@ -1,11 +1,11 @@
 [Unit]
-Description=Kitty VPN RollyPay Webhook
+Description=Kitty VPN Application
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/vpn-bot
-ExecStart=/opt/vpn-bot/.venv/bin/python /opt/vpn-bot/webhook.py
+ExecStart=/opt/vpn-bot/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8443
 Restart=always
 RestartSec=5
 User=root

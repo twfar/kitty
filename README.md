@@ -1005,13 +1005,13 @@ python3 -m venv .venv
 .venv/bin/python -m py_compile bot.py db.py config.py xui.py rollypay.py webhook.py
 ```
 
-запуск бота:
+запуск приложения:
 
 ```bash
-.venv/bin/python bot.py
+.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8443
 ```
 
-запуск webhook:
+приложение одновременно поднимает telegram webhook, rollypay webhook, apscheduler и очередь taskiq.
 
 ```text
 rollypay-webhook.service
