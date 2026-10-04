@@ -3,7 +3,6 @@ import hmac
 import json
 import logging
 import ssl
-import time
 
 from aiohttp import web
 from aiogram import Bot
@@ -19,7 +18,7 @@ from db import (
     get_pending_referral_rewards,
     mark_referral_rewards_applied,
 )
-from xui import renew_client_by_sub_id, add_days_to_client_by_sub_id, get_client
+from xui import renew_client_by_sub_id, add_days_to_client_by_sub_id
 
 
 def verify_signature(raw_body, timestamp, signature, secret):
@@ -166,8 +165,6 @@ async def webhook(request):
         )
         if reward:
             referrer = await get_user(reward["referrer_id"])
-            applied = False
-
             if referrer and referrer["sub_id"]:
                 try:
                     updated_referrer = add_days_to_client_by_sub_id(
@@ -191,7 +188,6 @@ async def webhook(request):
                         expires_at=referrer_expiry,
                     )
                     await mark_referral_rewards_applied([payment_id])
-                    applied = True
                 except Exception:
                     logging.exception(
                         "failed to apply referral payment reward"
