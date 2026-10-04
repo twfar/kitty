@@ -1,1 +1,0 @@
-"""fastapi роутеры kitty vpn."""
