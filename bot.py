@@ -38,7 +38,10 @@ from db import (
     set_setting,
     delete_user_data,
     create_referral,
+    register_referral_signup_reward,
     get_referral_stats,
+    get_pending_referral_rewards,
+    mark_referral_rewards_applied,
     get_active_users,
     notification_was_sent,
     mark_notification_sent,
@@ -343,6 +346,78 @@ async def send_subscription_info(message: Message, user):
 
 
 
+async def apply_referral_days(referrer_id: int, reward_days: int) -> bool:
+    referrer = await get_user(referrer_id)
+    if not referrer or not referrer["sub_id"]:
+        return False
+
+    try:
+        updated_client = add_days_to_client_by_sub_id(
+            referrer["sub_id"],
+            reward_days,
+        )
+        expires_at = int(updated_client.get("expiryTime", 0)) // 1000
+        await update_user(
+            tg_id=referrer["tg_id"],
+            username=referrer["username"],
+            email=referrer["email"],
+            sub_id=referrer["sub_id"],
+            subscription_url=(
+                f"https://87.121.82.175:2096/jsnn/{referrer['sub_id']}"
+            ),
+            status=referrer["status"],
+            created_at=referrer["created_at"],
+            expires_at=expires_at,
+        )
+        return True
+    except Exception:
+        logging.exception(
+            "failed to apply referral reward to referrer %s",
+            referrer_id,
+        )
+        return False
+
+
+async def apply_pending_referral_rewards(tg_id: int) -> bool:
+    user = await get_user(tg_id)
+    if not user or not user["sub_id"]:
+        return False
+
+    rewards = await get_pending_referral_rewards(tg_id)
+    if not rewards:
+        return False
+
+    total_days = sum(int(row["reward_days"]) for row in rewards)
+    try:
+        updated_client = add_days_to_client_by_sub_id(
+            user["sub_id"],
+            total_days,
+        )
+        expires_at = int(updated_client.get("expiryTime", 0)) // 1000
+        await update_user(
+            tg_id=user["tg_id"],
+            username=user["username"],
+            email=user["email"],
+            sub_id=user["sub_id"],
+            subscription_url=(
+                f"https://87.121.82.175:2096/jsnn/{user['sub_id']}"
+            ),
+            status=user["status"],
+            created_at=user["created_at"],
+            expires_at=expires_at,
+        )
+        await mark_referral_rewards_applied(
+            [row["payment_id"] for row in rewards]
+        )
+        return True
+    except Exception:
+        logging.exception(
+            "failed to apply pending referral rewards to user %s",
+            tg_id,
+        )
+        return False
+
+
 @dp.message(CommandStart())
 async def start(message: Message):
     user = await get_user(message.from_user.id)
@@ -353,16 +428,27 @@ async def start(message: Message):
         try:
             referrer_id = int(payload[4:])
             if referrer_id != message.from_user.id:
-                created_referral = await create_referral(referrer_id, message.from_user.id)
+                created_referral = await create_referral(
+                    referrer_id,
+                    message.from_user.id,
+                )
                 if created_referral:
-                    try:
-                        await message.bot.send_message(
-                            referrer_id,
-                            "👥 по твоей реферальной ссылке перешёл новый пользователь!\n\n"
-                            "если он оплатит подписку, ты получишь реферальные дни.",
-                        )
-                    except Exception:
-                        logging.exception("failed to notify referrer about referral click")
+                    reward_created = await register_referral_signup_reward(
+                        referrer_id,
+                        message.from_user.id,
+                    )
+                    if reward_created:
+                        await apply_referral_days(referrer_id, 1)
+                        try:
+                            await message.bot.send_message(
+                                referrer_id,
+                                "👥 твой друг перешел по ссылке!\n"
+                                "🎁 тебе начислен +1 день к подписке.",
+                            )
+                        except Exception:
+                            logging.exception(
+                                "failed to notify referrer about referral click"
+                            )
         except (TypeError, ValueError):
             logging.warning("invalid referral payload: %s", payload)
 
@@ -482,6 +568,8 @@ async def grant_trial(callback: CallbackQuery):
         await update_user(**values)
     else:
         await create_user(**values)
+
+    await apply_pending_referral_rewards(tg_id)
 
     await callback.bot.send_message(
         ADMIN_ID,
@@ -650,10 +738,11 @@ async def referrals(callback: CallbackQuery):
         f"👤 приглашено: {stats['total']}\n"
         f"💳 оплатили: {stats['paid']}\n"
         f"🎁 получено дней: {stats['earned_days']}\n"
-        f"💤 накоплено: {stats['pending_days']} дней\n\n"
-        "🎁 первая оплата друга: +10 дней\n"
-        "🎁 каждая следующая оплата: +5 дней\n\n"
-        "⚠️ без активной подписки дни не сгорают — они копятся и автоматически добавятся к следующей подписке.\n\n"
+        f"💤 ожидает подписки: {stats['pending_days']} дней\n\n"
+        "🎁 +1 день к подписке — сразу за каждого приглашённого друга!\n"
+        "🎁 +5 дней к подписке — за каждый месяц, оплаченный другом "
+        "(например, если друг берет 3 месяца — ты получаешь +15 дней!).\n"
+        "⚡ дни добавляются к твоей подписке моментально, даже если она сейчас закончилась.\n\n"
         f"твоя ссылка:\n{link}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📋 скопировать ссылку", copy_text=CopyTextButton(text=link), style=ButtonStyle.PRIMARY)],
