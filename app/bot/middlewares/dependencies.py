@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import aiohttp
-from aiogram import BaseMiddleware
+from aiogram import BaseMiddleware, Bot
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings

@@ -330,7 +330,7 @@ class XuiClient(BaseHTTPClient):
         *,
         days: int,
     ) -> dict[str, object]:
-        """Добавляет дни к действующей подписке без изменения лимита устройств."""
+        """Добавляет дни, начиная с текущего момента для истёкшего клиента."""
 
         if days <= 0:
             raise ValueError("days must be positive")

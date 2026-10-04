@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from app.core.config import Settings
 from app.database.crud import UserRepository
 from app.database.models import User
+from app.services.referral import ReferralService
 from app.services.xui_client import XuiAPIError, XuiClient
 
 
@@ -20,10 +21,30 @@ class SubscriptionService:
         user_repository: UserRepository,
         xui_client: XuiClient,
         settings: Settings,
+        referral_service: ReferralService,
     ) -> None:
         self._users = user_repository
         self._xui = xui_client
         self._settings = settings
+        self._referrals = referral_service
+
+    async def ensure_user(
+        self,
+        *,
+        tg_id: int,
+        username: str | None,
+    ) -> User:
+        """Гарантирует существование профиля пользователя."""
+
+        user = await self._users.get_by_tg_id(tg_id)
+        if user is not None:
+            return user
+
+        return await self._users.create(
+            tg_id=tg_id,
+            username=username,
+            status="new",
+        )
 
     async def get_user(self, tg_id: int) -> User | None:
         """Возвращает пользователя по Telegram ID."""
@@ -68,7 +89,7 @@ class SubscriptionService:
         )
 
         if user is None:
-            return await self._users.create(
+            user = await self._users.create(
                 tg_id=tg_id,
                 username=username,
                 email=email,
@@ -77,15 +98,21 @@ class SubscriptionService:
                 status="trial",
                 expires_at=expires_at,
             )
+        else:
+            user = await self._users.update_subscription(
+                user,
+                email=email,
+                sub_id=str(client["sub_id"]),
+                subscription_url=str(client["subscription_url"]),
+                status="trial",
+                expires_at=expires_at,
+            )
 
-        return await self._users.update_subscription(
+        await self._referrals.apply_pending_rewards(
             user,
-            email=email,
-            sub_id=str(client["sub_id"]),
-            subscription_url=str(client["subscription_url"]),
             status="trial",
-            expires_at=expires_at,
         )
+        return user
 
     async def get_subscription_info(
         self,

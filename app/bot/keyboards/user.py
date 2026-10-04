@@ -11,6 +11,7 @@ def main_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="🔗 подключиться", callback_data="connect")
     builder.button(text="📱 устройства", callback_data="devices")
     builder.button(text="💳 купить / продлить", callback_data="purchase")
+    builder.button(text="👥 рефералы", callback_data="referrals")
     builder.button(text="🆘 поддержка", callback_data="support")
     builder.adjust(1)
     return builder.as_markup()
@@ -34,6 +35,14 @@ def devices_keyboard() -> InlineKeyboardMarkup:
     )
     builder.button(text="🔙 назад", callback_data="back_to_menu")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def referrals_keyboard() -> InlineKeyboardMarkup:
+    """Меню реферальной системы."""
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 назад", callback_data="back_to_menu")
     return builder.as_markup()
 
 

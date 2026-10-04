@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 
 from sqlalchemy import (
     JSON, BigInteger, Boolean, DateTime, ForeignKey, Index, Integer,
@@ -24,6 +25,13 @@ class TimestampMixin:
         DateTime(timezone=True), server_default=func.now(),
         onupdate=func.now(), nullable=False
     )
+
+
+class ReferralRewardType(StrEnum):
+    """Тип реферальной награды."""
+
+    REGISTRATION = "registration"
+    PAYMENT = "payment"
 
 
 class User(TimestampMixin, Base):
@@ -232,6 +240,12 @@ class ReferralReward(TimestampMixin, Base):
     )
     reward_days: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
+    )
+    reward_type: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=ReferralRewardType.PAYMENT,
+        server_default=ReferralRewardType.PAYMENT.value,
     )
 
     user: Mapped[User] = relationship(back_populates="referral_rewards")

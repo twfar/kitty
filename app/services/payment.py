@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from decimal import Decimal
 import logging
 
 from aiogram import Bot
@@ -15,6 +14,8 @@ from app.database.crud import (
     UserRepository,
 )
 from app.database.models import Payment, User
+from app.services.notification import NotificationService
+from app.services.referral import ReferralService
 from app.services.xui_client import XuiAPIError, XuiClient
 
 
@@ -46,7 +47,15 @@ class PaymentService:
         self._xui = xui_client
         self._payments = PaymentRepository(session)
         self._users = UserRepository(session)
-        self._referrals = ReferralRepository(session)
+        self._referral_service = ReferralService(
+            user_repository=self._users,
+            referral_repository=ReferralRepository(session),
+            xui_client=xui_client,
+            notification_service=NotificationService(
+                session=session,
+                bot=bot,
+            ),
+        )
 
     async def process(
         self,
@@ -139,8 +148,14 @@ class PaymentService:
             paid_at=datetime.now(timezone.utc),
         )
 
-        await self._process_referral_reward(payment, user)
-        await self._apply_pending_rewards(user)
+        await self._referral_service.process_payment_reward(
+            payment=payment,
+            referred_user=user,
+        )
+        await self._referral_service.apply_pending_rewards(
+            user,
+            status="paid",
+        )
 
         await self._safe_send(
             user.tg_id,
@@ -148,7 +163,9 @@ class PaymentService:
             f"🔗 подписка продлена на {payment.days} дней.",
         )
 
-        referrer_id = await self._get_referrer_id(user)
+        referrer_id = await self._referral_service.get_referrer_id(
+            user.id
+        )
         await self._notify_admin(
             "✅ подписка продлена автоматически\n\n"
             f"👤 telegram id: {user.tg_id}\n"
@@ -186,136 +203,6 @@ class PaymentService:
             group="paid",
             hwid_limit=payment.device_limit,
         )
-
-    async def _process_referral_reward(
-        self,
-        payment: Payment,
-        referred_user: User,
-    ) -> None:
-        """Начисляет 10 дней за первый платёж или 5 за последующие."""
-
-        referral = await self._referrals.get_by_referred_user(referred_user.id)
-        if referral is None:
-            return
-
-        if await self._referrals.get_by_payment_id(payment.id) is not None:
-            return
-
-        reward_count = await self._referrals.count_rewards_for_referred_user(
-            referred_user.id
-        )
-        reward_days = 10 if reward_count == 0 else 5
-        reward = await self._referrals.create_reward(
-            user_id=referral.referrer_id,
-            amount=Decimal("0.00"),
-            currency=payment.currency,
-            reward_days=reward_days,
-            referral_id=referral.id,
-            payment_id=payment.id,
-        )
-
-        referrer = await self._users.get_by_id(referral.referrer_id)
-        if referrer is None:
-            return
-
-        applied = False
-        if (
-            referrer.sub_id
-            and referrer.expires_at is not None
-            and referrer.expires_at > datetime.now(timezone.utc)
-        ):
-            try:
-                updated = await self._xui.add_days_to_client_by_sub_id(
-                    referrer.sub_id,
-                    days=reward_days,
-                )
-                expiry_time = updated.get("expiryTime")
-                if isinstance(expiry_time, (int, float)):
-                    referrer_expires = datetime.fromtimestamp(
-                        float(expiry_time) / 1000,
-                        tz=timezone.utc,
-                    )
-                    sub_id = updated.get("subId")
-                    if isinstance(sub_id, str) and sub_id:
-                        await self._users.update_subscription(
-                            referrer,
-                            email=referrer.email,
-                            sub_id=sub_id,
-                            subscription_url=self._xui.get_subscription_url(
-                                sub_id,
-                                json_mode=True,
-                            ),
-                            status=referrer.status,
-                            expires_at=referrer_expires,
-                        )
-                        await self._referrals.mark_applied(reward)
-                        applied = True
-            except (XuiAPIError, ValueError, TypeError, KeyError):
-                logging.exception("failed to apply referral reward")
-
-        reward_text = (
-            f"🎁 реферальная награда: +{reward_days} дней"
-            + (
-                " к подписке."
-                if applied
-                else ".\n\n⚠️ активной подписки нет — дни накоплены "
-                "и автоматически добавятся к следующей подписке."
-            )
-        )
-        await self._safe_send(referrer.tg_id, reward_text)
-
-    async def _apply_pending_rewards(self, user: User) -> None:
-        """Добавляет накопленные реферальные дни после новой оплаты."""
-
-        rewards = await self._referrals.get_pending_for_user(user.id)
-        if not rewards or not user.sub_id:
-            return
-
-        total_days = sum(reward.reward_days for reward in rewards)
-        if total_days <= 0:
-            return
-
-        try:
-            updated = await self._xui.add_days_to_client_by_sub_id(
-                user.sub_id,
-                days=total_days,
-            )
-            expiry_time = updated.get("expiryTime")
-            sub_id = updated.get("subId")
-            if not isinstance(expiry_time, (int, float)):
-                return
-            if not isinstance(sub_id, str) or not sub_id:
-                return
-
-            expires_at = datetime.fromtimestamp(
-                float(expiry_time) / 1000,
-                tz=timezone.utc,
-            )
-            await self._users.update_subscription(
-                user,
-                email=user.email,
-                sub_id=sub_id,
-                subscription_url=self._xui.get_subscription_url(
-                    sub_id,
-                    json_mode=True,
-                ),
-                status="paid",
-                expires_at=expires_at,
-            )
-
-            for reward in rewards:
-                await self._referrals.mark_applied(reward)
-
-            await self._safe_send(
-                user.tg_id,
-                f"🎁 накопленные реферальные дни добавлены: +{total_days} дней.",
-            )
-        except (XuiAPIError, ValueError, TypeError, KeyError):
-            logging.exception("failed to apply pending referral rewards")
-
-    async def _get_referrer_id(self, user: User) -> int | None:
-        referral = await self._referrals.get_by_referred_user(user.id)
-        return referral.referrer_id if referral is not None else None
 
     async def _safe_send(self, tg_id: int, text: str) -> None:
         try:
