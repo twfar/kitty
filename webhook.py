@@ -140,7 +140,7 @@ async def webhook(request):
             username=user["username"],
             email=user["email"],
             sub_id=user["sub_id"],
-            subscription_url=f"https://87.121.82.175:2096/jsnn/{user['sub_id']}",
+            subscription_url=f"https://kitvp.duckdns.org:2096/jsnn/{user['sub_id']}",
             status="paid",
             created_at=user["created_at"],
             expires_at=expires_at,
@@ -180,7 +180,7 @@ async def webhook(request):
                         email=referrer["email"],
                         sub_id=referrer["sub_id"],
                         subscription_url=(
-                            f"https://87.121.82.175:2096/jsnn/"
+                            f"https://kitvp.duckdns.org:2096/jsnn/"
                             f"{referrer['sub_id']}"
                         ),
                         status=referrer["status"],
@@ -216,7 +216,7 @@ async def webhook(request):
             pending_expiry = int(updated_client.get("expiryTime", 0)) // 1000
             await update_user(
                 tg_id=user["tg_id"], username=user["username"], email=user["email"],
-                sub_id=user["sub_id"], subscription_url=f"https://87.121.82.175:2096/jsnn/{user['sub_id']}",
+                sub_id=user["sub_id"], subscription_url=f"https://kitvp.duckdns.org:2096/jsnn/{user['sub_id']}",
                 status="paid", created_at=user["created_at"], expires_at=pending_expiry,
             )
             await mark_referral_rewards_applied([row["payment_id"] for row in pending_rewards])
