@@ -103,7 +103,7 @@ def get_subscription_url(sub_id, json_mode=False):
 
     path = "/jsnn/" if json_mode else "/s/"
 
-    return f"https://87.121.82.175:2096{path}{sub_id}"
+    return f"https://kitvp.duckdns.org:2096{path}{sub_id}"
 
 def find_client(email):
     inbounds = get_inbounds()
