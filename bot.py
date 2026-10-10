@@ -291,7 +291,7 @@ async def get_subscription_data(user):
     if not sub_id or not expiry_time:
         return None
 
-    subscription_url = f"https://87.121.82.175:2096/jsnn/{sub_id}"
+    subscription_url = f"https://kitvp.duckdns.org:2096/jsnn/{sub_id}"
     expires_at = int(expiry_time) // 1000
 
     # синхронизируем данные бота с найденным клиентом 3x-ui.
@@ -332,7 +332,7 @@ async def send_subscription_info(message: Message, user):
     except Exception:
         used = 0
 
-    subscription_page_url = f"https://87.121.82.175:2096/s/{client_data.get('subId')}"
+    subscription_page_url = f"https://kitvp.duckdns.org:2096/s/{client_data.get('subId')}"
     await edit_menu(message, 
         "🔗 твоя подписка\n\n"
         "📱 устройства: "
@@ -363,7 +363,7 @@ async def apply_referral_days(referrer_id: int, reward_days: int) -> bool:
             email=referrer["email"],
             sub_id=referrer["sub_id"],
             subscription_url=(
-                f"https://87.121.82.175:2096/jsnn/{referrer['sub_id']}"
+                f"https://kitvp.duckdns.org:2096/jsnn/{referrer['sub_id']}"
             ),
             status=referrer["status"],
             created_at=referrer["created_at"],
@@ -400,7 +400,7 @@ async def apply_pending_referral_rewards(tg_id: int) -> bool:
             email=user["email"],
             sub_id=user["sub_id"],
             subscription_url=(
-                f"https://87.121.82.175:2096/jsnn/{user['sub_id']}"
+                f"https://kitvp.duckdns.org:2096/jsnn/{user['sub_id']}"
             ),
             status=user["status"],
             created_at=user["created_at"],
@@ -579,7 +579,7 @@ async def grant_trial(callback: CallbackQuery):
         f"🔗 sub id: {client['sub_id']}",
     )
 
-    trial_page_url = f"https://87.121.82.175:2096/s/{client['sub_id']}"
+    trial_page_url = f"https://kitvp.duckdns.org:2096/s/{client['sub_id']}"
     await edit_menu(
         callback.message,
         "🎁 trial активирован на 24 часа!\n\n"
@@ -917,7 +917,7 @@ async def purchase_confirm(callback: CallbackQuery):
 
             client_data = client.get("client", client)
             sub_id = client_data.get("subId") or client.get("sub_id")
-            subscription_url = f"https://87.121.82.175:2096/jsnn/{sub_id}"
+            subscription_url = f"https://kitvp.duckdns.org:2096/jsnn/{sub_id}"
 
             await create_user(
                 tg_id=tg_id,
@@ -1592,7 +1592,7 @@ async def admin_message_handler(message: Message):
             username=user["username"],
             email=user["email"],
             sub_id=user["sub_id"],
-            subscription_url=f"https://87.121.82.175:2096/jsnn/{user['sub_id']}",
+            subscription_url=f"https://kitvp.duckdns.org:2096/jsnn/{user['sub_id']}",
             status=user["status"],
             created_at=user["created_at"],
             expires_at=expires_at,
