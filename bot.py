@@ -824,8 +824,9 @@ async def update_purchase_selection(callback: CallbackQuery, devices: int, month
         "💳 покупка подписки\n\n"
         f"📱 устройств: {devices}\n"
         f"📅 срок: {months} {'месяц' if months == 1 else 'месяца'}\n"
-        f"💰 цена: {format_price(total)} ₽\n\n"
-        "выбери срок:",
+        f"💰 цена: {format_price(total)} ₽\n"
+        + ("🏷 скидка 10% за 3 месяца уже учтена.\n\n" if months == 3 else "\n")
+        + "выбери срок:",
         reply_markup=purchase_months_keyboard(devices, months),
     )
 
