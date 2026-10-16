@@ -1404,6 +1404,7 @@ async def admin_create_promo(callback: CallbackQuery):
         await callback.answer("доступ запрещён", show_alert=True)
         return
 
+    user_action_waiting.pop(callback.from_user.id, None)
     admin_action_waiting[callback.from_user.id] = "create_promo"
     await callback.answer()
     await edit_menu(callback.message, 
@@ -1549,7 +1550,8 @@ async def admin_message_handler(message: Message):
     text = message.text.strip()
 
     user_action = user_action_waiting.get(message.from_user.id)
-    if user_action == "promo":
+    # Admin input must be handled by the admin state, never by the user's promo flow.
+    if message.from_user.id != ADMIN_ID and user_action == "promo":
         code = text.upper()
         promo = await get_promo(code)
         now = int(time.time())
