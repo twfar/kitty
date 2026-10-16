@@ -235,6 +235,7 @@ def admin_keyboard():
             InlineKeyboardButton(text="🗑 удалить промокод", callback_data="admin_delete_promo"),
         ],
         [InlineKeyboardButton(text="🔧 технические работы", callback_data="admin_maintenance")],
+        [InlineKeyboardButton(text="🗑 удалить истёкшие подписки", callback_data="admin_expired_subscriptions")],
         [InlineKeyboardButton(text="🗑 очистить тестовый аккаунт", callback_data="admin_clear_test_user")],
     ])
 
@@ -775,8 +776,14 @@ async def purchase(callback: CallbackQuery):
     )
 
 
+def calculate_monthly_price(devices: int) -> int:
+    if not 3 <= devices <= 10:
+        raise ValueError("device count must be between 3 and 10")
+    return 80 + (devices - 3) * 30
+
+
 def purchase_selection_keyboard(devices: int):
-    monthly_price = 80 + (devices - 3) * 50
+    monthly_price = calculate_monthly_price(devices)
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🚫" if devices == 3 else "−", callback_data="purchase_device_value" if devices == 3 else "purchase_device_minus"),
@@ -802,7 +809,7 @@ def purchase_months_keyboard(devices: int, months: int):
 
 async def update_purchase_selection(callback: CallbackQuery, devices: int, months: int = 0):
     purchase_selection[callback.from_user.id] = {"devices": devices, "months": months}
-    monthly_price = 80 + (devices - 3) * 50
+    monthly_price = calculate_monthly_price(devices)
     if months == 0:
         await edit_menu(callback.message, 
             "💳 покупка подписки\n\n"
@@ -817,8 +824,9 @@ async def update_purchase_selection(callback: CallbackQuery, devices: int, month
         "💳 покупка подписки\n\n"
         f"📱 устройств: {devices}\n"
         f"📅 срок: {months} {'месяц' if months == 1 else 'месяца'}\n"
-        f"💰 цена: {format_price(total)} ₽\n\n"
-        "выбери срок:",
+        f"💰 цена: {format_price(total)} ₽\n"
+        + ("🏷 скидка 10% за 3 месяца уже учтена.\n\n" if months == 3 else "\n")
+        + "выбери срок:",
         reply_markup=purchase_months_keyboard(devices, months),
     )
 
@@ -865,11 +873,11 @@ async def purchase_back_devices(callback: CallbackQuery):
 
 
 def purchase_price(devices: int, months: int) -> float:
-    monthly_price = 80 + (devices - 3) * 50
+    monthly_price = calculate_monthly_price(devices)
     if months == 1:
         return float(monthly_price)
     if months == 3:
-        return monthly_price * 3 * 70 / 80
+        return monthly_price * 3 * 0.9
     raise ValueError("unsupported subscription period")
 
 
@@ -1066,6 +1074,130 @@ async def admin_clear_test_user(callback: CallbackQuery):
         "данные бота, платежи и VPN-подписка удалены.",
         reply_markup=admin_keyboard(),
     )
+
+
+@dp.callback_query(lambda c: c.data == "admin_expired_subscriptions")
+async def admin_expired_subscriptions(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    users = await get_active_users()
+    cutoff = int(time.time()) - SUBSCRIPTION_DELETE_AFTER_DAYS * 24 * 3600
+    expired_count = sum(
+        1 for user in users
+        if user["sub_id"] and int(user["expires_at"] or 0) <= cutoff
+    )
+    await callback.answer()
+    if expired_count == 0:
+        await edit_menu(
+            callback.message,
+            "🗑 старых подписок для удаления нет.\n\n"
+            f"удаляются только подписки, истёкшие более {SUBSCRIPTION_DELETE_AFTER_DAYS} дней назад.",
+            reply_markup=admin_keyboard(),
+        )
+        return
+
+    await edit_menu(
+        callback.message,
+        "⚠️ удаление истёкших подписок\n\n"
+        f"найдено в базе: {expired_count}\n"
+        f"к удалению: подписки, истёкшие более {SUBSCRIPTION_DELETE_AFTER_DAYS} дней назад.\n\n"
+        "перед удалением бот повторно проверит срок в 3x-ui. "
+        "продлённые подписки останутся нетронутыми. записи пользователей и история оплат сохранятся.\n\n"
+        "продолжить?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🗑 подтвердить удаление", callback_data="admin_expired_subscriptions_confirm", style=ButtonStyle.DANGER)],
+            [InlineKeyboardButton(text="🔙 отмена", callback_data="admin_back")],
+        ]),
+    )
+
+
+@dp.callback_query(lambda c: c.data == "admin_expired_subscriptions_confirm")
+async def admin_expired_subscriptions_confirm(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    await callback.answer("проверяю подписки...")
+    users = await get_active_users()
+    now = int(time.time())
+    cutoff = now - SUBSCRIPTION_DELETE_AFTER_DAYS * 24 * 3600
+    deleted = 0
+    skipped = 0
+    failed = 0
+
+    for user in users:
+        tg_id = int(user["tg_id"])
+        db_expiry = int(user["expires_at"] or 0)
+        sub_id = user["sub_id"]
+        if not sub_id or db_expiry > cutoff:
+            continue
+
+        try:
+            latest_user = await get_user(tg_id)
+            if (
+                not latest_user
+                or not latest_user["sub_id"]
+                or latest_user["sub_id"] != sub_id
+                or int(latest_user["expires_at"] or 0) > cutoff
+            ):
+                skipped += 1
+                continue
+
+            client = get_client(tg_id=tg_id)
+            if client:
+                client_data = client.get("client", client)
+                raw_panel_expiry = client_data.get("expiryTime")
+                if not raw_panel_expiry:
+                    skipped += 1
+                    logging.warning(
+                        "skip expired-subscription cleanup for user %s: "
+                        "3x-ui expiry is missing",
+                        tg_id,
+                    )
+                    continue
+                panel_expiry = int(raw_panel_expiry) // 1000
+                if panel_expiry > cutoff:
+                    skipped += 1
+                    continue
+                if not delete_client_by_tg_id(tg_id):
+                    skipped += 1
+                    continue
+
+            latest_user = await get_user(tg_id)
+            if (
+                latest_user
+                and latest_user["sub_id"] == sub_id
+                and int(latest_user["expires_at"] or 0) <= cutoff
+            ):
+                await update_user(
+                    tg_id=tg_id,
+                    username=latest_user["username"],
+                    email=latest_user["email"],
+                    sub_id=None,
+                    subscription_url=None,
+                    status=latest_user["status"],
+                    created_at=latest_user["created_at"],
+                    expires_at=int(latest_user["expires_at"] or 0),
+                )
+                deleted += 1
+            else:
+                skipped += 1
+        except Exception:
+            failed += 1
+            logging.exception("failed to delete expired subscription for user %s", tg_id)
+
+    await edit_menu(
+        callback.message,
+        "🗑 обработка истёкших подписок завершена\n\n"
+        f"✅ очищено: {deleted}\n"
+        f"⏭ пропущено (срок изменился или клиент не найден): {skipped}\n"
+        f"❌ ошибок: {failed}\n\n"
+        "данные пользователей и история платежей сохранены.",
+        reply_markup=admin_keyboard(),
+    )
+
 
 @dp.callback_query(lambda c: c.data.startswith("unblock_notifications:"))
 async def unblock_notifications(callback: CallbackQuery):
