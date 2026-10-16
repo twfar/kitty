@@ -468,6 +468,25 @@ async def start(message: Message):
         except Exception:
             logging.exception("failed to notify admin about /start")
 
+    if user and user["status"] in ("trial", "paid") and not user["sub_id"]:
+        await answer_menu(
+            message,
+            "твоя предыдущая подписка была удалена, потому что срок её действия истёк.\\n\\n"
+            "ты можешь оформить новую подписку или обратиться в поддержку.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="💳 купить новую подписку",
+                    callback_data="purchase",
+                    style=ButtonStyle.PRIMARY,
+                )],
+                [InlineKeyboardButton(
+                    text="🆘 поддержка",
+                    url=SUPPORT_URL,
+                )],
+            ]),
+        )
+        return
+
     if user and user["status"] != "pending":
         stats = await get_referral_stats(message.from_user.id)
         await answer_menu(
@@ -756,10 +775,6 @@ async def referrals(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "purchase")
 async def purchase(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
-
-    if user and user["status"] in ("trial", "paid") and not user["sub_id"]:
-        await callback.answer("профиль повреждён, напиши в поддержку", show_alert=True)
-        return
 
     purchase_selection[callback.from_user.id] = {
         "devices": 3,
