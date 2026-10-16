@@ -71,7 +71,7 @@ dp = Dispatcher()
 
 BOT_VERSION = "1.0.8"
 TRIAL_DURATION_HOURS = 24
-SUBSCRIPTION_DELETE_AFTER_DAYS = 5
+SUBSCRIPTION_DELETE_AFTER_DAYS = 3
 TEST_USER_TG_ID = 8772456974
 
 ADMIN_URL = "https://t.me/kittyvpnoff?direct"
@@ -800,7 +800,7 @@ def purchase_months_keyboard(devices: int, months: int):
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="1 месяц", callback_data="purchase_months_1"),
-            InlineKeyboardButton(text="3 месяца", callback_data="purchase_months_3"),
+            InlineKeyboardButton(text="3 месяца · −10%", callback_data="purchase_months_3"),
         ],
         [InlineKeyboardButton(text=f"✅ подтвердить · {format_price(total)} ₽", callback_data="purchase_confirm", style=ButtonStyle.PRIMARY)],
         [InlineKeyboardButton(text="🔙 назад", callback_data="purchase_back_devices")],
@@ -1990,7 +1990,7 @@ async def notifications_worker(bot: Bot):
                                 "⏳ твой trial скоро закончится.\n\n"
                                 "осталось меньше 3 часов.\n"
                                 "хочешь продолжить пользоваться kitty vpn — купи подписку.\n\n"
-                                "если не продлить, через 5 дней после окончания подписка будет удалена, "
+                                "если не продлить, через 3 дня после окончания подписка будет удалена, "
                                 "а ссылка перестанет работать.",
                                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                                     [InlineKeyboardButton(text="💳 купить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
@@ -2011,7 +2011,7 @@ async def notifications_worker(bot: Bot):
                                     user,
                                     "⏳ подписка закончится в ближайшие сутки.\n\n"
                                     "продли её заранее, чтобы не потерять доступ.\n\n"
-                                    "если не продлить, через 5 дней после окончания подписка будет удалена, "
+                                    "если не продлить, через 3 дня после окончания подписка будет удалена, "
                                     "а ссылка перестанет работать.",
                                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                                         [InlineKeyboardButton(text="💳 продлить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
@@ -2030,7 +2030,7 @@ async def notifications_worker(bot: Bot):
                                     user,
                                     "⚠️ подписка закончится примерно через час.\n\n"
                                     "продли её сейчас, чтобы vpn продолжил работать без перерыва.\n\n"
-                                    "если не продлить, через 5 дней после окончания подписка будет удалена, "
+                                    "если не продлить, через 3 дня после окончания подписка будет удалена, "
                                     "а ссылка перестанет работать.",
                                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                                         [InlineKeyboardButton(text="💳 продлить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
@@ -2048,7 +2048,7 @@ async def notifications_worker(bot: Bot):
                                 bot,
                                 user,
                                 "❌ срок подписки закончился.\n\n"
-                                "через 5 дней без продления подписка будет удалена из системы, "
+                                "через 3 дня без продления подписка будет удалена из системы, "
                                 "а ссылка перестанет работать.\n\n"
                                 "купи новую подписку, чтобы снова пользоваться kitty vpn.",
                                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
