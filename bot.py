@@ -1148,7 +1148,16 @@ async def admin_expired_subscriptions_confirm(callback: CallbackQuery):
             client = get_client(tg_id=tg_id)
             if client:
                 client_data = client.get("client", client)
-                panel_expiry = int(client_data.get("expiryTime") or 0) // 1000
+                raw_panel_expiry = client_data.get("expiryTime")
+                if not raw_panel_expiry:
+                    skipped += 1
+                    logging.warning(
+                        "skip expired-subscription cleanup for user %s: "
+                        "3x-ui expiry is missing",
+                        tg_id,
+                    )
+                    continue
+                panel_expiry = int(raw_panel_expiry) // 1000
                 if panel_expiry > cutoff:
                     skipped += 1
                     continue
