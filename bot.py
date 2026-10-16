@@ -71,6 +71,7 @@ dp = Dispatcher()
 
 BOT_VERSION = "1.0.8"
 TRIAL_DURATION_HOURS = 24
+SUBSCRIPTION_DELETE_AFTER_DAYS = 5
 TEST_USER_TG_ID = 8772456974
 
 ADMIN_URL = "https://t.me/kittyvpnoff?direct"
@@ -899,10 +900,10 @@ async def purchase_confirm(callback: CallbackQuery):
     await callback.answer("создаю платёж...")
 
     try:
-        if not user:
+        if not user or not user["sub_id"]:
             tg_id = callback.from_user.id
             username = callback.from_user.username or "unknown"
-            email = f"tg_{tg_id}"
+            email = (user["email"] if user and user["email"] else f"tg_{tg_id}")
             client = find_client(email)
 
             if not client:
@@ -917,18 +918,36 @@ async def purchase_confirm(callback: CallbackQuery):
 
             client_data = client.get("client", client)
             sub_id = client_data.get("subId") or client.get("sub_id")
+            if not sub_id:
+                raise RuntimeError("new payment client has no subscription id")
             subscription_url = f"https://kitvp.duckdns.org:2096/jsnn/{sub_id}"
+            expires_at = int(
+                client_data.get("expiryTime") or client.get("expiry_time") or 0
+            ) // 1000
+            created_at = int(user["created_at"]) if user else int(time.time())
 
-            await create_user(
-                tg_id=tg_id,
-                username=username,
-                email=email,
-                sub_id=sub_id,
-                subscription_url=subscription_url,
-                status="pending",
-                created_at=int(time.time()),
-                expires_at=int(client_data.get("expiryTime") or 0) // 1000,
-            )
+            if user:
+                await update_user(
+                    tg_id=tg_id,
+                    username=username,
+                    email=email,
+                    sub_id=sub_id,
+                    subscription_url=subscription_url,
+                    status="pending",
+                    created_at=created_at,
+                    expires_at=expires_at,
+                )
+            else:
+                await create_user(
+                    tg_id=tg_id,
+                    username=username,
+                    email=email,
+                    sub_id=sub_id,
+                    subscription_url=subscription_url,
+                    status="pending",
+                    created_at=created_at,
+                    expires_at=expires_at,
+                )
             user = await get_user(tg_id)
 
         payment = await rollypay_create_payment(
@@ -1838,7 +1857,9 @@ async def notifications_worker(bot: Bot):
                                 user,
                                 "⏳ твой trial скоро закончится.\n\n"
                                 "осталось меньше 3 часов.\n"
-                                "хочешь продолжить пользоваться kitty vpn — купи подписку.",
+                                "хочешь продолжить пользоваться kitty vpn — купи подписку.\n\n"
+                                "если не продлить, через 5 дней после окончания подписка будет удалена, "
+                                "а ссылка перестанет работать.",
                                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                                     [InlineKeyboardButton(text="💳 купить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
                                 ]),
@@ -1857,7 +1878,9 @@ async def notifications_worker(bot: Bot):
                                     bot,
                                     user,
                                     "⏳ подписка закончится в ближайшие сутки.\n\n"
-                                    "продли её заранее, чтобы не потерять доступ.",
+                                    "продли её заранее, чтобы не потерять доступ.\n\n"
+                                    "если не продлить, через 5 дней после окончания подписка будет удалена, "
+                                    "а ссылка перестанет работать.",
                                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                                         [InlineKeyboardButton(text="💳 продлить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
                                     ]),
@@ -1874,7 +1897,9 @@ async def notifications_worker(bot: Bot):
                                     bot,
                                     user,
                                     "⚠️ подписка закончится примерно через час.\n\n"
-                                    "продли её сейчас, чтобы vpn продолжил работать без перерыва.",
+                                    "продли её сейчас, чтобы vpn продолжил работать без перерыва.\n\n"
+                                    "если не продлить, через 5 дней после окончания подписка будет удалена, "
+                                    "а ссылка перестанет работать.",
                                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                                         [InlineKeyboardButton(text="💳 продлить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
                                     ]),
@@ -1891,6 +1916,8 @@ async def notifications_worker(bot: Bot):
                                 bot,
                                 user,
                                 "❌ срок подписки закончился.\n\n"
+                                "через 5 дней без продления подписка будет удалена из системы, "
+                                "а ссылка перестанет работать.\n\n"
                                 "купи новую подписку, чтобы снова пользоваться kitty vpn.",
                                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                                     [InlineKeyboardButton(text="💳 купить подписку", callback_data="purchase", style=ButtonStyle.PRIMARY)],
@@ -1900,6 +1927,64 @@ async def notifications_worker(bot: Bot):
                                 await mark_notification_sent(tg_id, "subscription_expired", expires_at)
                         except Exception:
                             logging.exception("failed to send expiration notification")
+
+                # удаляем просроченную подписку после пяти дней без продления.
+                grace_period = SUBSCRIPTION_DELETE_AFTER_DAYS * 24 * 3600
+                if remaining <= -grace_period:
+                    try:
+                        current_user = await get_user(tg_id)
+                        current_expiry = (
+                            int(current_user["expires_at"] or 0)
+                            if current_user else 0
+                        )
+                        current_sub_id = (
+                            current_user["sub_id"] if current_user else None
+                        )
+
+                        # Повторно проверяем БД, чтобы не удалить продлённую подписку
+                        # по устаревшей записи из списка активных пользователей.
+                        if (
+                            current_user
+                            and current_sub_id
+                            and current_expiry == expires_at
+                            and current_expiry + grace_period <= int(time.time())
+                        ):
+                            client = get_client(tg_id=tg_id)
+                            if client:
+                                client_data = client.get("client", client)
+                                client_expiry = (
+                                    int(client_data.get("expiryTime") or 0) // 1000
+                                )
+                                # Если в панели срок уже обновлён, не удаляем клиента.
+                                if client_expiry + grace_period > int(time.time()):
+                                    continue
+                                delete_client_by_tg_id(tg_id)
+
+                            latest_user = await get_user(tg_id)
+                            if (
+                                latest_user
+                                and latest_user["sub_id"] == current_sub_id
+                                and int(latest_user["expires_at"] or 0) == current_expiry
+                            ):
+                                await update_user(
+                                    tg_id=tg_id,
+                                    username=latest_user["username"],
+                                    email=latest_user["email"],
+                                    sub_id=None,
+                                    subscription_url=None,
+                                    status=latest_user["status"],
+                                    created_at=latest_user["created_at"],
+                                    expires_at=current_expiry,
+                                )
+                                logging.info(
+                                    "deleted expired subscription for user %s",
+                                    tg_id,
+                                )
+                    except Exception:
+                        logging.exception(
+                            "failed to delete expired subscription for user %s",
+                            tg_id,
+                        )
 
                 # отслеживаем новые HWID-устройства.
                 try:
