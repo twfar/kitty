@@ -1121,16 +1121,26 @@ async def about_service(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "promo")
 async def promo(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
-    if not user:
-        await callback.answer("сначала получи trial", show_alert=True)
+    has_trial_history = await has_used_trial(callback.from_user.id)
+    expired_user = (
+        bool(user and user["status"] in ("trial", "paid") and not user["sub_id"])
+        or bool(not user and has_trial_history)
+    )
+
+    if not user and not has_trial_history:
+        await callback.answer("сначала оформи подписку", show_alert=True)
+        return
+    if user and not user["sub_id"] and not expired_user:
+        await callback.answer("сначала оформи подписку", show_alert=True)
         return
 
     user_action_waiting[callback.from_user.id] = "promo"
     await callback.answer()
-    await edit_menu(callback.message, 
+    await edit_menu(
+        callback.message,
         "🎟 промокод\n\nотправь промокод одним сообщением.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")]
+            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
         ]),
     )
 
@@ -1809,9 +1819,80 @@ async def admin_message_handler(message: Message):
             return
 
         user = await get_user(message.from_user.id)
+        has_trial_history = await has_used_trial(message.from_user.id)
+        expired_user = (
+            bool(user and user["status"] in ("trial", "paid") and not user["sub_id"])
+            or bool(not user and has_trial_history)
+        )
+
         if not user or not user["sub_id"]:
-            await message.answer("❌ подписка не найдена.")
+            if not expired_user:
+                await message.answer("❌ сначала оформи подписку.")
+                user_action_waiting.pop(message.from_user.id, None)
+                return
+
+            email = user["email"] if user and user["email"] else f"tg_{message.from_user.id}"
+            created_at = int(user["created_at"]) if user else now
+            username = message.from_user.username or "unknown"
+            try:
+                client = create_client(
+                    tg_id=message.from_user.id,
+                    email=email,
+                    expiry_hours=int(promo["reward_days"]) * 24,
+                    group="paid",
+                )
+                sub_id = client["sub_id"]
+                expires_at = int(client["expiry_time"]) // 1000
+            except Exception as e:
+                logging.exception("failed to create promo subscription")
+                await message.answer(f"❌ не удалось активировать промокод: {e}")
+                return
+
+            if not await use_promo(code, message.from_user.id, now):
+                try:
+                    delete_client_by_tg_id(message.from_user.id)
+                except Exception:
+                    logging.exception("failed to clean up client after rejected promo")
+                await message.answer("❌ промокод уже использован тобой или больше недоступен.")
+                return
+
+            values = dict(
+                tg_id=message.from_user.id,
+                username=username,
+                email=email,
+                sub_id=sub_id,
+                subscription_url=client["subscription_url"],
+                status="paid",
+                created_at=created_at,
+                expires_at=expires_at,
+            )
+            if user:
+                await update_user(**values)
+            else:
+                await create_user(**values)
+
             user_action_waiting.pop(message.from_user.id, None)
+            try:
+                await message.bot.send_message(
+                    ADMIN_ID,
+                    "🎟 активирован промокод и создана подписка\n\n"
+                    f"🎟 промокод: {code}\n"
+                    f"🎁 срок: +{promo['reward_days']} дней\n"
+                    f"👤 кому: @{username if username != 'unknown' else '—'}\n"
+                    f"🆔 telegram id: {message.from_user.id}",
+                )
+            except Exception:
+                logging.exception("failed to notify admin about promo activation")
+
+            await message.answer(
+                "✅ промокод применён!\n\n"
+                f"🎁 создана подписка на {promo['reward_days']} дней.\n"
+                f"⏳ осталось: {format_remaining(expires_at)}\n\n"
+                "теперь можешь подключиться к vpn.",
+                reply_markup=subscription_keyboard(
+                    f"https://kitvp.duckdns.org:2096/s/{sub_id}"
+                ),
+            )
             return
 
         try:
