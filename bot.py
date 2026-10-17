@@ -1121,8 +1121,8 @@ async def promo(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
     has_trial_history = await has_used_trial(callback.from_user.id)
     expired_user = (
-        bool(user and user["status"] in ("trial", "paid") and not user["sub_id"])
-        or bool(not user and has_trial_history)
+        bool(has_trial_history and (not user or not user["sub_id"]))
+        or bool(user and user["status"] in ("trial", "paid") and not user["sub_id"])
     )
 
     if not user and not has_trial_history:
@@ -1819,8 +1819,8 @@ async def admin_message_handler(message: Message):
         user = await get_user(message.from_user.id)
         has_trial_history = await has_used_trial(message.from_user.id)
         expired_user = (
-            bool(user and user["status"] in ("trial", "paid") and not user["sub_id"])
-            or bool(not user and has_trial_history)
+            bool(has_trial_history and (not user or not user["sub_id"]))
+            or bool(user and user["status"] in ("trial", "paid") and not user["sub_id"])
         )
 
         if not user or not user["sub_id"]:
