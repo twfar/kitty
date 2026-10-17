@@ -420,6 +420,25 @@ async def apply_pending_referral_rewards(tg_id: int) -> bool:
         return False
 
 
+async def show_expired_subscription_menu(message: Message) -> None:
+    await answer_menu(
+        message,
+        "твоя предыдущая подписка была удалена, потому что срок её действия истёк.\n\n"
+        "ты можешь оформить новую подписку или обратиться в поддержку.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="💳 купить новую подписку",
+                callback_data="purchase",
+                style=ButtonStyle.PRIMARY,
+            )],
+            [InlineKeyboardButton(
+                text="🆘 поддержка",
+                url=SUPPORT_URL,
+            )],
+        ]),
+    )
+
+
 @dp.message(CommandStart())
 async def start(message: Message):
     user = await get_user(message.from_user.id)
@@ -469,22 +488,7 @@ async def start(message: Message):
             logging.exception("failed to notify admin about /start")
 
     if user and user["status"] in ("trial", "paid") and not user["sub_id"]:
-        await answer_menu(
-            message,
-            "твоя предыдущая подписка была удалена, потому что срок её действия истёк.\\n\\n"
-            "ты можешь оформить новую подписку или обратиться в поддержку.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
-                    text="💳 купить новую подписку",
-                    callback_data="purchase",
-                    style=ButtonStyle.PRIMARY,
-                )],
-                [InlineKeyboardButton(
-                    text="🆘 поддержка",
-                    url=SUPPORT_URL,
-                )],
-            ]),
-        )
+        await show_expired_subscription_menu(message)
         return
 
     if user and user["status"] != "pending":
@@ -732,7 +736,27 @@ async def back_to_subscription(callback: CallbackQuery):
     if not user:
         await callback.answer("сначала получи trial", show_alert=True)
         return
+
     await callback.answer()
+    if user["status"] in ("trial", "paid") and not user["sub_id"]:
+        await edit_menu(
+            callback.message,
+            "твоя предыдущая подписка была удалена, потому что срок её действия истёк.\n\n"
+            "ты можешь оформить новую подписку или обратиться в поддержку.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="💳 купить новую подписку",
+                    callback_data="purchase",
+                    style=ButtonStyle.PRIMARY,
+                )],
+                [InlineKeyboardButton(
+                    text="🆘 поддержка",
+                    url=SUPPORT_URL,
+                )],
+            ]),
+        )
+        return
+
     await send_subscription_info(callback.message, user)
 
 
