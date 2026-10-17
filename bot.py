@@ -801,6 +801,7 @@ async def back_to_subscription(callback: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
+    user_action_waiting.pop(callback.from_user.id, None)
     user = await get_user(callback.from_user.id)
     if (await has_used_trial(callback.from_user.id) or (
         user and user["status"] in ("trial", "paid")
