@@ -574,6 +574,13 @@ async def grant_trial(callback: CallbackQuery):
     tg_id = callback.from_user.id
     username = callback.from_user.username or "unknown"
     user = await get_user(tg_id)
+    if await has_used_trial(tg_id):
+        await callback.answer("ты уже использовал trial", show_alert=True)
+        if user and user["sub_id"]:
+            await send_subscription_info(callback.message, user)
+        else:
+            await edit_expired_subscription_menu(callback.message)
+        return
 
     if user and user["status"] in ("trial", "paid"):
         await callback.answer("у тебя уже есть подписка", show_alert=True)
@@ -620,6 +627,7 @@ async def grant_trial(callback: CallbackQuery):
     else:
         await create_user(**values)
 
+    await mark_trial_claimed(tg_id, created_at)
     await apply_pending_referral_rewards(tg_id)
 
     await callback.bot.send_message(
@@ -686,6 +694,13 @@ async def start_trial(callback: CallbackQuery):
 async def subscription(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
     if not user or not user["sub_id"]:
+        if await has_used_trial(callback.from_user.id) or (
+            user and user["status"] in ("trial", "paid")
+        ):
+            await callback.answer()
+            await edit_expired_subscription_menu(callback.message)
+            return
+
         await callback.answer()
         await edit_menu(
             callback.message,
@@ -788,8 +803,17 @@ async def back_to_subscription(callback: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
+    user = await get_user(callback.from_user.id)
+    if (await has_used_trial(callback.from_user.id) or (
+        user and user["status"] in ("trial", "paid")
+    )) and (not user or not user["sub_id"]):
+        await callback.answer()
+        await edit_expired_subscription_menu(callback.message)
+        return
+
     await callback.answer()
-    await edit_menu(callback.message, 
+    await edit_menu(
+        callback.message,
         "главное меню kitty vpn\n\n"
         "наш канал — @kittyvpnoff",
         reply_markup=main_keyboard(),
