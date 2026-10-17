@@ -26,6 +26,8 @@ from config import (
 from db import (
     init_db,
     get_user,
+    has_used_trial,
+    mark_trial_claimed,
     create_user,
     update_user,
     get_promo,
@@ -420,22 +422,43 @@ async def apply_pending_referral_rewards(tg_id: int) -> bool:
         return False
 
 
+EXPIRED_SUBSCRIPTION_TEXT = (
+    "твоя предыдущая подписка была удалена, потому что срок её действия истёк.\n\n"
+    "ты можешь оформить новую подписку, активировать промокод или обратиться в поддержку."
+)
+
+
+def expired_subscription_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="💳 купить новую подписку",
+            callback_data="purchase",
+            style=ButtonStyle.PRIMARY,
+        )],
+        [InlineKeyboardButton(
+            text="🎟 активировать промокод",
+            callback_data="promo",
+        )],
+        [InlineKeyboardButton(
+            text="🆘 поддержка",
+            url=SUPPORT_URL,
+        )],
+    ])
+
+
 async def show_expired_subscription_menu(message: Message) -> None:
     await answer_menu(
         message,
-        "твоя предыдущая подписка была удалена, потому что срок её действия истёк.\n\n"
-        "ты можешь оформить новую подписку или обратиться в поддержку.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="💳 купить новую подписку",
-                callback_data="purchase",
-                style=ButtonStyle.PRIMARY,
-            )],
-            [InlineKeyboardButton(
-                text="🆘 поддержка",
-                url=SUPPORT_URL,
-            )],
-        ]),
+        EXPIRED_SUBSCRIPTION_TEXT,
+        reply_markup=expired_subscription_keyboard(),
+    )
+
+
+async def edit_expired_subscription_menu(message: Message) -> None:
+    await edit_menu(
+        message,
+        EXPIRED_SUBSCRIPTION_TEXT,
+        reply_markup=expired_subscription_keyboard(),
     )
 
 
@@ -487,7 +510,10 @@ async def start(message: Message):
         except Exception:
             logging.exception("failed to notify admin about /start")
 
-    if user and user["status"] in ("trial", "paid") and not user["sub_id"]:
+    trial_claimed = await has_used_trial(message.from_user.id)
+    if (trial_claimed or (
+        user and user["status"] in ("trial", "paid")
+    )) and (not user or not user["sub_id"]):
         await show_expired_subscription_menu(message)
         return
 
