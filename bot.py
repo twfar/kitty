@@ -660,6 +660,11 @@ async def grant_trial(callback: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "check_trial_subscription")
 async def check_trial_subscription(callback: CallbackQuery):
+    if await has_used_trial(callback.from_user.id):
+        await callback.answer("ты уже использовал trial", show_alert=True)
+        await edit_expired_subscription_menu(callback.message)
+        return
+
     try:
         member = await callback.bot.get_chat_member(CHANNEL, callback.from_user.id)
         subscribed = member.status in ("member", "administrator", "creator")
@@ -676,6 +681,11 @@ async def check_trial_subscription(callback: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "start_trial")
 async def start_trial(callback: CallbackQuery):
+    if await has_used_trial(callback.from_user.id):
+        await callback.answer("ты уже использовал trial", show_alert=True)
+        await edit_expired_subscription_menu(callback.message)
+        return
+
     try:
         member = await callback.bot.get_chat_member(CHANNEL, callback.from_user.id)
         subscribed = member.status in ("member", "administrator", "creator")
@@ -774,30 +784,18 @@ async def delete_all_hwid(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "back_to_subscription")
 async def back_to_subscription(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
+    if (await has_used_trial(callback.from_user.id) or (
+        user and user["status"] in ("trial", "paid")
+    )) and (not user or not user["sub_id"]):
+        await callback.answer()
+        await edit_expired_subscription_menu(callback.message)
+        return
+
     if not user:
-        await callback.answer("сначала получи trial", show_alert=True)
+        await callback.answer("сначала оформи подписку", show_alert=True)
         return
 
     await callback.answer()
-    if user["status"] in ("trial", "paid") and not user["sub_id"]:
-        await edit_menu(
-            callback.message,
-            "твоя предыдущая подписка была удалена, потому что срок её действия истёк.\n\n"
-            "ты можешь оформить новую подписку или обратиться в поддержку.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
-                    text="💳 купить новую подписку",
-                    callback_data="purchase",
-                    style=ButtonStyle.PRIMARY,
-                )],
-                [InlineKeyboardButton(
-                    text="🆘 поддержка",
-                    url=SUPPORT_URL,
-                )],
-            ]),
-        )
-        return
-
     await send_subscription_info(callback.message, user)
 
 
