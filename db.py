@@ -32,6 +32,21 @@ async def init_db():
             )
 
         await db.execute("""
+            CREATE TABLE IF NOT EXISTS trial_claims (
+                tg_id INTEGER PRIMARY KEY,
+                claimed_at INTEGER NOT NULL
+            )
+        """)
+
+        # Preserve historical trial records already represented in the users table.
+        await db.execute("""
+            INSERT OR IGNORE INTO trial_claims (tg_id, claimed_at)
+            SELECT tg_id, COALESCE(created_at, strftime('%s', 'now'))
+            FROM users
+            WHERE status = 'trial'
+        """)
+
+        await db.execute("""
             CREATE TABLE IF NOT EXISTS promo_codes (
                 code TEXT PRIMARY KEY,
                 reward_days INTEGER NOT NULL,
@@ -188,6 +203,24 @@ async def set_setting(key: str, value):
         await db.execute(
             "INSERT OR REPLACE INTO bot_settings (key, value) VALUES (?, ?)",
             (key, str(value)),
+        )
+        await db.commit()
+
+
+async def has_used_trial(tg_id: int) -> bool:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            "SELECT 1 FROM trial_claims WHERE tg_id = ? LIMIT 1",
+            (tg_id,),
+        )
+        return await cursor.fetchone() is not None
+
+
+async def mark_trial_claimed(tg_id: int, claimed_at: int) -> None:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO trial_claims (tg_id, claimed_at) VALUES (?, ?)",
+            (tg_id, claimed_at),
         )
         await db.commit()
 

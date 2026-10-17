@@ -26,6 +26,8 @@ from config import (
 from db import (
     init_db,
     get_user,
+    has_used_trial,
+    mark_trial_claimed,
     create_user,
     update_user,
     get_promo,
@@ -420,22 +422,43 @@ async def apply_pending_referral_rewards(tg_id: int) -> bool:
         return False
 
 
+EXPIRED_SUBSCRIPTION_TEXT = (
+    "твоя предыдущая подписка была удалена, потому что срок её действия истёк.\n\n"
+    "ты можешь оформить новую подписку, активировать промокод или обратиться в поддержку."
+)
+
+
+def expired_subscription_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="💳 купить новую подписку",
+            callback_data="purchase",
+            style=ButtonStyle.PRIMARY,
+        )],
+        [InlineKeyboardButton(
+            text="🎟 активировать промокод",
+            callback_data="promo",
+        )],
+        [InlineKeyboardButton(
+            text="🆘 поддержка",
+            url=SUPPORT_URL,
+        )],
+    ])
+
+
 async def show_expired_subscription_menu(message: Message) -> None:
     await answer_menu(
         message,
-        "твоя предыдущая подписка была удалена, потому что срок её действия истёк.\n\n"
-        "ты можешь оформить новую подписку или обратиться в поддержку.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="💳 купить новую подписку",
-                callback_data="purchase",
-                style=ButtonStyle.PRIMARY,
-            )],
-            [InlineKeyboardButton(
-                text="🆘 поддержка",
-                url=SUPPORT_URL,
-            )],
-        ]),
+        EXPIRED_SUBSCRIPTION_TEXT,
+        reply_markup=expired_subscription_keyboard(),
+    )
+
+
+async def edit_expired_subscription_menu(message: Message) -> None:
+    await edit_menu(
+        message,
+        EXPIRED_SUBSCRIPTION_TEXT,
+        reply_markup=expired_subscription_keyboard(),
     )
 
 
@@ -487,7 +510,10 @@ async def start(message: Message):
         except Exception:
             logging.exception("failed to notify admin about /start")
 
-    if user and user["status"] in ("trial", "paid") and not user["sub_id"]:
+    trial_claimed = await has_used_trial(message.from_user.id)
+    if (trial_claimed or (
+        user and user["status"] in ("trial", "paid")
+    )) and (not user or not user["sub_id"]):
         await show_expired_subscription_menu(message)
         return
 
@@ -548,6 +574,13 @@ async def grant_trial(callback: CallbackQuery):
     tg_id = callback.from_user.id
     username = callback.from_user.username or "unknown"
     user = await get_user(tg_id)
+    if await has_used_trial(tg_id):
+        await callback.answer("ты уже использовал trial", show_alert=True)
+        if user and user["sub_id"]:
+            await send_subscription_info(callback.message, user)
+        else:
+            await edit_expired_subscription_menu(callback.message)
+        return
 
     if user and user["status"] in ("trial", "paid"):
         await callback.answer("у тебя уже есть подписка", show_alert=True)
@@ -594,6 +627,7 @@ async def grant_trial(callback: CallbackQuery):
     else:
         await create_user(**values)
 
+    await mark_trial_claimed(tg_id, created_at)
     await apply_pending_referral_rewards(tg_id)
 
     await callback.bot.send_message(
@@ -626,6 +660,11 @@ async def grant_trial(callback: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "check_trial_subscription")
 async def check_trial_subscription(callback: CallbackQuery):
+    if await has_used_trial(callback.from_user.id):
+        await callback.answer("ты уже использовал trial", show_alert=True)
+        await edit_expired_subscription_menu(callback.message)
+        return
+
     try:
         member = await callback.bot.get_chat_member(CHANNEL, callback.from_user.id)
         subscribed = member.status in ("member", "administrator", "creator")
@@ -642,6 +681,11 @@ async def check_trial_subscription(callback: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "start_trial")
 async def start_trial(callback: CallbackQuery):
+    if await has_used_trial(callback.from_user.id):
+        await callback.answer("ты уже использовал trial", show_alert=True)
+        await edit_expired_subscription_menu(callback.message)
+        return
+
     try:
         member = await callback.bot.get_chat_member(CHANNEL, callback.from_user.id)
         subscribed = member.status in ("member", "administrator", "creator")
@@ -660,6 +704,13 @@ async def start_trial(callback: CallbackQuery):
 async def subscription(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
     if not user or not user["sub_id"]:
+        if await has_used_trial(callback.from_user.id) or (
+            user and user["status"] in ("trial", "paid")
+        ):
+            await callback.answer()
+            await edit_expired_subscription_menu(callback.message)
+            return
+
         await callback.answer()
         await edit_menu(
             callback.message,
@@ -733,37 +784,35 @@ async def delete_all_hwid(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "back_to_subscription")
 async def back_to_subscription(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
+    if (await has_used_trial(callback.from_user.id) or (
+        user and user["status"] in ("trial", "paid")
+    )) and (not user or not user["sub_id"]):
+        await callback.answer()
+        await edit_expired_subscription_menu(callback.message)
+        return
+
     if not user:
-        await callback.answer("сначала получи trial", show_alert=True)
+        await callback.answer("сначала оформи подписку", show_alert=True)
         return
 
     await callback.answer()
-    if user["status"] in ("trial", "paid") and not user["sub_id"]:
-        await edit_menu(
-            callback.message,
-            "твоя предыдущая подписка была удалена, потому что срок её действия истёк.\n\n"
-            "ты можешь оформить новую подписку или обратиться в поддержку.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
-                    text="💳 купить новую подписку",
-                    callback_data="purchase",
-                    style=ButtonStyle.PRIMARY,
-                )],
-                [InlineKeyboardButton(
-                    text="🆘 поддержка",
-                    url=SUPPORT_URL,
-                )],
-            ]),
-        )
-        return
-
     await send_subscription_info(callback.message, user)
 
 
 @dp.callback_query(lambda c: c.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
+    user_action_waiting.pop(callback.from_user.id, None)
+    user = await get_user(callback.from_user.id)
+    if (await has_used_trial(callback.from_user.id) or (
+        user and user["status"] in ("trial", "paid")
+    )) and (not user or not user["sub_id"]):
+        await callback.answer()
+        await edit_expired_subscription_menu(callback.message)
+        return
+
     await callback.answer()
-    await edit_menu(callback.message, 
+    await edit_menu(
+        callback.message,
         "главное меню kitty vpn\n\n"
         "наш канал — @kittyvpnoff",
         reply_markup=main_keyboard(),
@@ -1071,16 +1120,26 @@ async def about_service(callback: CallbackQuery):
 @dp.callback_query(lambda c: c.data == "promo")
 async def promo(callback: CallbackQuery):
     user = await get_user(callback.from_user.id)
-    if not user:
-        await callback.answer("сначала получи trial", show_alert=True)
+    has_trial_history = await has_used_trial(callback.from_user.id)
+    expired_user = (
+        bool(has_trial_history and (not user or not user["sub_id"]))
+        or bool(user and user["status"] in ("trial", "paid") and not user["sub_id"])
+    )
+
+    if not user and not has_trial_history:
+        await callback.answer("сначала оформи подписку", show_alert=True)
+        return
+    if user and not user["sub_id"] and not expired_user:
+        await callback.answer("сначала оформи подписку", show_alert=True)
         return
 
     user_action_waiting[callback.from_user.id] = "promo"
     await callback.answer()
-    await edit_menu(callback.message, 
+    await edit_menu(
+        callback.message,
         "🎟 промокод\n\nотправь промокод одним сообщением.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")]
+            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
         ]),
     )
 
@@ -1759,9 +1818,80 @@ async def admin_message_handler(message: Message):
             return
 
         user = await get_user(message.from_user.id)
+        has_trial_history = await has_used_trial(message.from_user.id)
+        expired_user = (
+            bool(has_trial_history and (not user or not user["sub_id"]))
+            or bool(user and user["status"] in ("trial", "paid") and not user["sub_id"])
+        )
+
         if not user or not user["sub_id"]:
-            await message.answer("❌ подписка не найдена.")
+            if not expired_user:
+                await message.answer("❌ сначала оформи подписку.")
+                user_action_waiting.pop(message.from_user.id, None)
+                return
+
+            email = user["email"] if user and user["email"] else f"tg_{message.from_user.id}"
+            created_at = int(user["created_at"]) if user else now
+            username = message.from_user.username or "unknown"
+            try:
+                client = create_client(
+                    tg_id=message.from_user.id,
+                    email=email,
+                    expiry_hours=int(promo["reward_days"]) * 24,
+                    group="paid",
+                )
+                sub_id = client["sub_id"]
+                expires_at = int(client["expiry_time"]) // 1000
+            except Exception as e:
+                logging.exception("failed to create promo subscription")
+                await message.answer(f"❌ не удалось активировать промокод: {e}")
+                return
+
+            if not await use_promo(code, message.from_user.id, now):
+                try:
+                    delete_client_by_tg_id(message.from_user.id)
+                except Exception:
+                    logging.exception("failed to clean up client after rejected promo")
+                await message.answer("❌ промокод уже использован тобой или больше недоступен.")
+                return
+
+            values = dict(
+                tg_id=message.from_user.id,
+                username=username,
+                email=email,
+                sub_id=sub_id,
+                subscription_url=client["subscription_url"],
+                status="paid",
+                created_at=created_at,
+                expires_at=expires_at,
+            )
+            if user:
+                await update_user(**values)
+            else:
+                await create_user(**values)
+
             user_action_waiting.pop(message.from_user.id, None)
+            try:
+                await message.bot.send_message(
+                    ADMIN_ID,
+                    "🎟 активирован промокод и создана подписка\n\n"
+                    f"🎟 промокод: {code}\n"
+                    f"🎁 срок: +{promo['reward_days']} дней\n"
+                    f"👤 кому: @{username if username != 'unknown' else '—'}\n"
+                    f"🆔 telegram id: {message.from_user.id}",
+                )
+            except Exception:
+                logging.exception("failed to notify admin about promo activation")
+
+            await message.answer(
+                "✅ промокод применён!\n\n"
+                f"🎁 создана подписка на {promo['reward_days']} дней.\n"
+                f"⏳ осталось: {format_remaining(expires_at)}\n\n"
+                "теперь можешь подключиться к vpn.",
+                reply_markup=subscription_keyboard(
+                    f"https://kitvp.duckdns.org:2096/s/{sub_id}"
+                ),
+            )
             return
 
         try:
