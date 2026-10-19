@@ -6,7 +6,7 @@ from urllib.parse import quote
 
 from config import XUI_HOST, XUI_API_TOKEN
 
-INBOUND_IDS = [8, 31, 35, 39, 41, 54]
+INBOUND_IDS = [8, 31, 35, 41, 54]
 
 def _request(method, path, data=None):
     url = f"{XUI_HOST}{path}"
