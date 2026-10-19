@@ -67,6 +67,9 @@ from xui import (
     delete_all_hwid_devices,
     delete_client_by_tg_id,
     disable_client,
+    DEFAULT_INBOUND_IDS,
+    get_inbound_ids,
+    set_inbound_ids,
 )
 
 dp = Dispatcher()
@@ -237,6 +240,7 @@ def admin_keyboard():
             InlineKeyboardButton(text="🗑 удалить промокод", callback_data="admin_delete_promo"),
         ],
         [InlineKeyboardButton(text="🔧 технические работы", callback_data="admin_maintenance")],
+        [InlineKeyboardButton(text="🌐 inbound IDs", callback_data="admin_inbound_ids")],
         [InlineKeyboardButton(text="🗑 удалить истёкшие подписки", callback_data="admin_expired_subscriptions")],
         [InlineKeyboardButton(text="🗑 очистить тестовый аккаунт", callback_data="admin_clear_test_user")],
     ])
@@ -1669,6 +1673,28 @@ async def admin_create_promo(callback: CallbackQuery):
     )
 
 
+@dp.callback_query(lambda c: c.data == "admin_inbound_ids")
+async def admin_inbound_ids(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    current_ids = get_inbound_ids()
+    admin_action_waiting[ADMIN_ID] = "inbound_ids"
+    await callback.answer()
+    await edit_menu(
+        callback.message,
+        "🌐 inbound IDs для новых клиентов\n\n"
+        f"сейчас подключаются inbound: {', '.join(map(str, current_ids))}\n\n"
+        "отправь новые ID через запятую или пробел.\n"
+        "пример: 8, 31, 35, 41, 54\n\n"
+        "изменение повлияет только на новых клиентов. существующие подписки не изменятся.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
+        ]),
+    )
+
+
 @dp.callback_query(lambda c: c.data == "admin_back")
 async def admin_back(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -1958,6 +1984,39 @@ async def admin_message_handler(message: Message):
 
     action = admin_action_waiting.get(message.from_user.id)
     if not action:
+        return
+
+    if action == "inbound_ids":
+        try:
+            inbound_ids = [
+                int(value)
+                for value in text.replace(",", " ").split()
+            ]
+            if not inbound_ids:
+                raise ValueError("укажи хотя бы один inbound ID")
+            if any(inbound_id <= 0 for inbound_id in inbound_ids):
+                raise ValueError("ID должны быть положительными числами")
+            if len(inbound_ids) != len(set(inbound_ids)):
+                raise ValueError("повторяющиеся ID не допускаются")
+        except ValueError as error:
+            await message.answer(
+                f"❌ некорректный список: {error}\n\n"
+                "пример: 8, 31, 35, 41, 54"
+            )
+            return
+
+        await set_setting(
+            "xui_inbound_ids",
+            ",".join(map(str, inbound_ids)),
+        )
+        set_inbound_ids(inbound_ids)
+        admin_action_waiting.pop(ADMIN_ID, None)
+        await message.answer(
+            "✅ список inbound IDs сохранён.\n\n"
+            f"новые клиенты будут создаваться в inbound: {', '.join(map(str, inbound_ids))}\n\n"
+            "уже созданные подписки не затронуты.",
+            reply_markup=admin_keyboard(),
+        )
         return
 
     if action == "maintenance_message":
@@ -2354,6 +2413,20 @@ async def notifications_worker(bot: Bot):
 async def main():
     logging.basicConfig(level=logging.INFO)
     await init_db()
+    stored_inbound_ids = await get_setting("xui_inbound_ids")
+    if stored_inbound_ids:
+        try:
+            set_inbound_ids([
+                int(value)
+                for value in stored_inbound_ids.replace(" ", "").split(",")
+                if value
+            ])
+        except (TypeError, ValueError):
+            logging.exception(
+                "invalid xui_inbound_ids setting; using defaults %s",
+                DEFAULT_INBOUND_IDS,
+            )
+            set_inbound_ids(DEFAULT_INBOUND_IDS)
     bot = Bot(token=BOT_TOKEN)
     try:
         started_at = datetime.now().strftime("%d.%m.%Y %H:%M:%S")

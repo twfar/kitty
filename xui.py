@@ -6,7 +6,28 @@ from urllib.parse import quote
 
 from config import XUI_HOST, XUI_API_TOKEN
 
-INBOUND_IDS = [8, 31, 35, 41, 54]
+DEFAULT_INBOUND_IDS = [8, 31, 35, 41, 54]
+INBOUND_IDS = DEFAULT_INBOUND_IDS.copy()
+
+
+def set_inbound_ids(inbound_ids):
+    """Update inbound IDs used when creating new 3x-ui clients."""
+    normalized = [int(inbound_id) for inbound_id in inbound_ids]
+    if not normalized:
+        raise ValueError("at least one inbound ID is required")
+    if any(inbound_id <= 0 for inbound_id in normalized):
+        raise ValueError("inbound IDs must be positive integers")
+    if len(normalized) != len(set(normalized)):
+        raise ValueError("inbound IDs must not contain duplicates")
+
+    global INBOUND_IDS
+    INBOUND_IDS = normalized
+
+
+def get_inbound_ids():
+    """Return a copy of the inbound IDs used for new clients."""
+    return INBOUND_IDS.copy()
+
 
 def _request(method, path, data=None):
     url = f"{XUI_HOST}{path}"
