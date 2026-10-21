@@ -1519,56 +1519,60 @@ async def admin_expired_subscriptions_confirm(callback: CallbackQuery):
 
     await callback.answer("проверяю подписки...")
     users = await get_active_users()
-    now = int(time.time())
-    cutoff = now - SUBSCRIPTION_DELETE_AFTER_DAYS * 24 * 3600
+    cutoff = int(time.time()) - SUBSCRIPTION_DELETE_AFTER_DAYS * 24 * 3600
     deleted = 0
     skipped = 0
     failed = 0
 
     for user in users:
         tg_id = int(user["tg_id"])
-        db_expiry = int(user["expires_at"] or 0)
         sub_id = user["sub_id"]
-        if not sub_id or db_expiry > cutoff:
+        if not sub_id:
             continue
 
         try:
+            # Перед удалением сверяем актуальную запись, чтобы не затронуть
+            # подписку, которую пользователь успел продлить.
             latest_user = await get_user(tg_id)
-            if (
-                not latest_user
-                or not latest_user["sub_id"]
-                or latest_user["sub_id"] != sub_id
-                or int(latest_user["expires_at"] or 0) > cutoff
-            ):
+            if not latest_user or latest_user["sub_id"] != sub_id:
                 skipped += 1
                 continue
 
             client = get_client(tg_id=tg_id)
+            panel_expiry = 0
             if client:
                 client_data = client.get("client", client)
                 raw_panel_expiry = client_data.get("expiryTime")
                 if not raw_panel_expiry:
                     skipped += 1
                     logging.warning(
-                        "skip expired-subscription cleanup for user %s: "
-                        "3x-ui expiry is missing",
+                        "skip cleanup for user %s: 3x-ui expiry is missing",
                         tg_id,
                     )
                     continue
-                panel_expiry = int(raw_panel_expiry) // 1000
+                panel_expiry = int(raw_panel_expiry)
+                if panel_expiry > 10_000_000_000:
+                    panel_expiry //= 1000
+
+                # Срок в панели — источник истины: не пропускаем клиента
+                # только потому, что дата в локальной базе отличается.
                 if panel_expiry > cutoff:
                     skipped += 1
                     continue
+
                 if not delete_client_by_tg_id(tg_id):
+                    skipped += 1
+                    continue
+            else:
+                # Если клиента уже нет в панели, очищаем старую запись базы
+                # только когда её срок тоже прошёл более трёх дней назад.
+                db_expiry = int(latest_user["expires_at"] or 0)
+                if not db_expiry or db_expiry > cutoff:
                     skipped += 1
                     continue
 
             latest_user = await get_user(tg_id)
-            if (
-                latest_user
-                and latest_user["sub_id"] == sub_id
-                and int(latest_user["expires_at"] or 0) <= cutoff
-            ):
+            if latest_user and latest_user["sub_id"] == sub_id:
                 await update_user(
                     tg_id=tg_id,
                     username=latest_user["username"],
@@ -1590,7 +1594,7 @@ async def admin_expired_subscriptions_confirm(callback: CallbackQuery):
         callback.message,
         "🗑 обработка истёкших подписок завершена\n\n"
         f"✅ очищено: {deleted}\n"
-        f"⏭ пропущено (срок изменился или клиент не найден): {skipped}\n"
+        f"⏭ пропущено (подписка ещё действует или данные изменились): {skipped}\n"
         f"❌ ошибок: {failed}\n\n"
         "данные пользователей и история платежей сохранены.",
         reply_markup=admin_keyboard(),
