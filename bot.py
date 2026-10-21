@@ -515,9 +515,17 @@ async def start(message: Message):
             logging.exception("failed to notify admin about /start")
 
     trial_claimed = await has_used_trial(message.from_user.id)
-    if (trial_claimed or (
+    has_subscription_history = trial_claimed or bool(
         user and user["status"] in ("trial", "paid")
-    )) and (not user or not user["sub_id"]):
+    )
+    has_working_subscription = bool(
+        user
+        and user["subscription_class"] == "active"
+        and user["sub_id"]
+        and int(user["expires_at"] or 0) > int(time.time())
+    )
+
+    if has_subscription_history and not has_working_subscription:
         await show_expired_subscription_menu(message)
         return
 
@@ -1213,6 +1221,83 @@ async def admin_expired_subscriptions(callback: CallbackQuery):
             [InlineKeyboardButton(text="🔙 отмена", callback_data="admin_back")],
         ]),
     )
+
+
+async def cleanup_expired_subscriptions() -> tuple[int, int, int]:
+    """Delete 3x-ui clients whose subscription expired more than three days ago."""
+    users = await get_active_users()
+    now = int(time.time())
+    cutoff = now - SUBSCRIPTION_DELETE_AFTER_DAYS * 24 * 3600
+    deleted = skipped = failed = 0
+
+    for user in users:
+        tg_id = int(user["tg_id"])
+        sub_id = user["sub_id"]
+        if not sub_id or int(user["expires_at"] or 0) > cutoff:
+            continue
+
+        try:
+            latest_user = await get_user(tg_id)
+            if (
+                not latest_user
+                or latest_user["sub_id"] != sub_id
+                or int(latest_user["expires_at"] or 0) > cutoff
+            ):
+                skipped += 1
+                continue
+
+            client = get_client(tg_id=tg_id)
+            if client:
+                client_data = client.get("client", client)
+                raw_expiry = client_data.get("expiryTime")
+                if not raw_expiry or int(raw_expiry) // 1000 > cutoff:
+                    skipped += 1
+                    continue
+                if not delete_client_by_tg_id(tg_id):
+                    skipped += 1
+                    continue
+
+            latest_user = await get_user(tg_id)
+            if (
+                latest_user
+                and latest_user["sub_id"] == sub_id
+                and int(latest_user["expires_at"] or 0) <= cutoff
+            ):
+                await update_user(
+                    tg_id=tg_id,
+                    username=latest_user["username"],
+                    email=latest_user["email"],
+                    sub_id=None,
+                    subscription_url=None,
+                    status=latest_user["status"],
+                    created_at=latest_user["created_at"],
+                    expires_at=int(latest_user["expires_at"] or 0),
+                )
+                deleted += 1
+            else:
+                skipped += 1
+        except Exception:
+            failed += 1
+            logging.exception("automatic expired-subscription cleanup failed for user %s", tg_id)
+
+    return deleted, skipped, failed
+
+
+async def expired_subscription_cleanup_worker() -> None:
+    """Run expired subscription cleanup hourly without blocking bot startup."""
+    while True:
+        try:
+            deleted, skipped, failed = await cleanup_expired_subscriptions()
+            if deleted or failed:
+                logging.info(
+                    "expired subscription cleanup: deleted=%s skipped=%s failed=%s",
+                    deleted, skipped, failed,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("expired subscription cleanup worker failed")
+        await asyncio.sleep(3600)
 
 
 @dp.callback_query(lambda c: c.data == "admin_expired_subscriptions_confirm")
@@ -2440,12 +2525,14 @@ async def main():
 
     notification_worker_task = asyncio.create_task(notifications_worker(bot))
     broadcast_worker_task = asyncio.create_task(broadcast_worker(bot))
+    expired_cleanup_task = asyncio.create_task(expired_subscription_cleanup_worker())
     try:
         await dp.start_polling(bot)
     finally:
         notification_worker_task.cancel()
         broadcast_worker_task.cancel()
-        for task in (notification_worker_task, broadcast_worker_task):
+        expired_cleanup_task.cancel()
+        for task in (notification_worker_task, broadcast_worker_task, expired_cleanup_task):
             try:
                 await task
             except asyncio.CancelledError:
