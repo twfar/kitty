@@ -239,11 +239,157 @@ def admin_keyboard():
             InlineKeyboardButton(text="📋 промокоды", callback_data="admin_promos"),
             InlineKeyboardButton(text="🗑 удалить промокод", callback_data="admin_delete_promo"),
         ],
+        [InlineKeyboardButton(text="🖥 оплата серверов", callback_data="admin_server_payments")],
         [InlineKeyboardButton(text="🔧 технические работы", callback_data="admin_maintenance")],
         [InlineKeyboardButton(text="🌐 inbound IDs", callback_data="admin_inbound_ids")],
         [InlineKeyboardButton(text="🗑 удалить истёкшие подписки", callback_data="admin_expired_subscriptions")],
         [InlineKeyboardButton(text="🗑 очистить тестовый аккаунт", callback_data="admin_clear_test_user")],
     ])
+
+
+def server_payments_keyboard(payments):
+    rows = []
+    for item in payments:
+        amount = float(item["cost"]) * int(item["quantity"])
+        rows.append([
+            InlineKeyboardButton(
+                text=f"✏️ {item['name']} · {amount:g} ₽ · {item['due_date']}",
+                callback_data=f"admin_server_edit:{item['id']}",
+            ),
+            InlineKeyboardButton(text="🗑", callback_data=f"admin_server_delete:{item['id']}"),
+        ])
+    rows.append([InlineKeyboardButton(text="➕ добавить сервер", callback_data="admin_server_add")])
+    rows.append([InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def get_server_payments():
+    import json
+    raw = await get_setting("server_payments", "[]")
+    try:
+        payments = json.loads(raw)
+    except (TypeError, ValueError):
+        logging.exception("invalid server_payments setting")
+        return []
+    if not isinstance(payments, list):
+        return []
+    return [
+        item for item in payments
+        if isinstance(item, dict)
+        and isinstance(item.get("id"), int)
+        and isinstance(item.get("name"), str)
+        and isinstance(item.get("due_date"), str)
+        and isinstance(item.get("cost"), (int, float))
+        and isinstance(item.get("quantity"), int)
+    ]
+
+
+async def server_expenses_summary():
+    from datetime import date
+    payments = await get_server_payments()
+    month = date.today().strftime("%Y-%m")
+    due = [item for item in payments if item["due_date"][:7] == month]
+    total = sum(float(item["cost"]) * int(item["quantity"]) for item in payments)
+    due_total = sum(float(item["cost"]) * int(item["quantity"]) for item in due)
+    lines = [
+        "🧾 расходы на серверы",
+        f"💰 всего: {total:g} ₽",
+        f"📅 платежи в этом месяце: {due_total:g} ₽",
+    ]
+    if due:
+        lines.extend(["", "платежи:"])
+        for item in sorted(due, key=lambda entry: entry["due_date"]):
+            amount = float(item["cost"]) * int(item["quantity"])
+            lines.append(f"• {item['name']} — {item['due_date'][8:10]}.{item['due_date'][5:7]} — {amount:g} ₽")
+    else:
+        lines.append("• в этом месяце платежей нет")
+    return "\n".join(lines)
+
+
+async def show_server_payments(message, *, edit=False):
+    payments = await get_server_payments()
+    if payments:
+        lines = ["🖥 оплата серверов", ""]
+        for item in sorted(payments, key=lambda entry: entry["due_date"]):
+            amount = float(item["cost"]) * int(item["quantity"])
+            lines.append(
+                f"• {item['name']} — {item['quantity']} шт. — {amount:g} ₽ — до {item['due_date']}"
+            )
+        lines.extend(["", await server_expenses_summary(), "", "выбери сервер для изменения или добавь новый."])
+    else:
+        lines = ["🖥 оплата серверов", "", "серверы ещё не добавлены.", "добавь название, дату, количество и цену."]
+    markup = server_payments_keyboard(payments)
+    if edit:
+        await edit_menu(message, "\n".join(lines), reply_markup=markup)
+    else:
+        await message.answer("\n".join(lines), reply_markup=markup)
+
+
+@dp.callback_query(lambda c: c.data == "admin_server_payments")
+async def admin_server_payments(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+    await callback.answer()
+    await show_server_payments(callback.message, edit=True)
+
+
+@dp.callback_query(lambda c: c.data == "admin_server_add")
+async def admin_server_add(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+    admin_action_waiting[ADMIN_ID] = "server_payment_add"
+    await callback.answer()
+    await callback.message.answer(
+        "отправь данные в формате:\n"
+        "название | дата оплаты (гггг-мм-дд) | количество серверов | цена за один сервер\n\n"
+        "пример: финляндия | 2026-10-25 | 2 | 189"
+    )
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_server_edit:"))
+async def admin_server_edit(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+    try:
+        payment_id = int(callback.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("неверный id", show_alert=True)
+        return
+    payments = await get_server_payments()
+    item = next((entry for entry in payments if entry["id"] == payment_id), None)
+    if item is None:
+        await callback.answer("сервер не найден", show_alert=True)
+        return
+    admin_action_waiting[ADMIN_ID] = f"server_payment_edit:{payment_id}"
+    await callback.answer()
+    await callback.message.answer(
+        "отправь обновлённые данные:\n"
+        "название | дата оплаты (гггг-мм-дд) | количество серверов | цена за один сервер\n\n"
+        f"текущие данные: {item['name']} | {item['due_date']} | {item['quantity']} | {item['cost']}"
+    )
+
+
+@dp.callback_query(lambda c: c.data.startswith("admin_server_delete:"))
+async def admin_server_delete(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+    try:
+        payment_id = int(callback.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("неверный id", show_alert=True)
+        return
+    payments = await get_server_payments()
+    remaining = [item for item in payments if item["id"] != payment_id]
+    import json
+    await set_setting("server_payments", json.dumps(remaining, ensure_ascii=False))
+    await callback.answer("сервер удалён")
+    await show_server_payments(callback.message, edit=True)
+
+
 
 def admin_subscription_keyboard(limit):
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -534,7 +680,8 @@ async def start(message: Message):
         await answer_menu(
             message,
             "главное меню kitty vpn\n\n"
-            "наш канал — @kittyvpnoff",
+            "наш канал — @kittyvpnoff\n\n"
+            f"{await server_expenses_summary()}",
             reply_markup=main_keyboard(stats["total"]),
             photo=MAIN_MENU_PHOTO,
         )
@@ -826,7 +973,8 @@ async def back_to_menu(callback: CallbackQuery):
     await edit_menu(
         callback.message,
         "главное меню kitty vpn\n\n"
-        "наш канал — @kittyvpnoff",
+        "наш канал — @kittyvpnoff\n\n"
+        f"{await server_expenses_summary()}",
         reply_markup=main_keyboard(),
     )
 
@@ -1857,6 +2005,59 @@ async def admin_message_handler(message: Message):
             )
             return
 
+
+        if action == "server_payment_add" or (action and action.startswith("server_payment_edit:")):
+            from datetime import date
+            import json
+            raw_text = (message.text or "").strip()
+            parts = [part.strip() for part in raw_text.split("|")]
+            if len(parts) != 4:
+                await message.answer(
+                    "❌ нужно 4 поля через |:\n"
+                    "название | дата оплаты гггг-мм-дд | количество | цена за один сервер"
+                )
+                return
+            name, due_date, quantity_raw, cost_raw = parts
+            try:
+                parsed_date = date.fromisoformat(due_date)
+                quantity = int(quantity_raw)
+                cost = float(cost_raw.replace(",", "."))
+                if not name or quantity <= 0 or cost < 0:
+                    raise ValueError
+            except ValueError:
+                await message.answer(
+                    "❌ проверь дату, количество и цену. дата: 2026-10-25; количество > 0; цена ≥ 0."
+                )
+                return
+            payments = await get_server_payments()
+            if action.startswith("server_payment_edit:"):
+                payment_id = int(action.split(":", 1)[1])
+                item = next((entry for entry in payments if entry["id"] == payment_id), None)
+                if item is None:
+                    await message.answer("❌ сервер не найден.")
+                    admin_action_waiting.pop(ADMIN_ID, None)
+                    return
+                item.update({
+                    "name": name,
+                    "due_date": parsed_date.isoformat(),
+                    "quantity": quantity,
+                    "cost": cost,
+                })
+            else:
+                payment_id = max((int(item["id"]) for item in payments), default=0) + 1
+                payments.append({
+                    "id": payment_id,
+                    "name": name,
+                    "due_date": parsed_date.isoformat(),
+                    "quantity": quantity,
+                    "cost": cost,
+                })
+            await set_setting("server_payments", json.dumps(payments, ensure_ascii=False))
+            admin_action_waiting.pop(ADMIN_ID, None)
+            await message.answer("✅ платёж сохранён.", reply_markup=admin_keyboard())
+            await show_server_payments(message)
+            return
+
         if action == "personal_target":
             target = (message.text or "").strip()
             if target.startswith("@"):
@@ -2104,6 +2305,7 @@ async def admin_message_handler(message: Message):
         )
         return
 
+
     if action == "maintenance_message":
         await set_setting("maintenance_message", text)
         admin_action_waiting.pop(message.from_user.id, None)
@@ -2281,6 +2483,51 @@ async def send_notification(bot: Bot, user, text: str, reply_markup=None) -> boo
                 logging.exception("failed to notify admin about blocked user")
 
         return False
+
+
+async def server_payment_reminders_worker(bot: Bot):
+    from datetime import date
+    while True:
+        try:
+            today = date.today()
+            payments = await get_server_payments()
+            for item in payments:
+                try:
+                    due = date.fromisoformat(item["due_date"])
+                except ValueError:
+                    logging.warning("invalid server payment due date for id=%s", item["id"])
+                    continue
+                days_left = (due - today).days
+                if days_left not in (3, 1, 0):
+                    continue
+                notice_key = f"{item['id']}:{item['due_date']}"
+                notice_type = f"server_payment_{days_left}"
+                if await notification_was_sent(ADMIN_ID, notice_type, notice_key):
+                    continue
+                when = {3: "через 3 дня", 1: "завтра", 0: "сегодня"}[days_left]
+                amount = float(item["cost"]) * int(item["quantity"])
+                try:
+                    await bot.send_message(
+                        ADMIN_ID,
+                        f"🔔 напоминание об оплате сервера\n\n"
+                        f"🖥 сервер: {item['name']}\n"
+                        f"📅 дата оплаты: {item['due_date']}\n"
+                        f"⏳ оплатить: {when}\n"
+                        f"🔢 количество: {item['quantity']}\n"
+                        f"💰 сумма: {amount:g} ₽",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="⚙️ открыть расходы", callback_data="admin_server_payments")]
+                        ]),
+                    )
+                    await mark_notification_sent(ADMIN_ID, notice_type, notice_key)
+                except Exception:
+                    logging.exception("failed to send server payment reminder for id=%s", item["id"])
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception("server payment reminders worker failed")
+        await asyncio.sleep(3600)
+
 
 async def notifications_worker(bot: Bot):
     while True:
@@ -2526,13 +2773,15 @@ async def main():
     notification_worker_task = asyncio.create_task(notifications_worker(bot))
     broadcast_worker_task = asyncio.create_task(broadcast_worker(bot))
     expired_cleanup_task = asyncio.create_task(expired_subscription_cleanup_worker())
+    server_payment_reminders_task = asyncio.create_task(server_payment_reminders_worker(bot))
     try:
         await dp.start_polling(bot)
     finally:
         notification_worker_task.cancel()
         broadcast_worker_task.cancel()
         expired_cleanup_task.cancel()
-        for task in (notification_worker_task, broadcast_worker_task, expired_cleanup_task):
+        server_payment_reminders_task.cancel()
+        for task in (notification_worker_task, broadcast_worker_task, expired_cleanup_task, server_payment_reminders_task):
             try:
                 await task
             except asyncio.CancelledError:
