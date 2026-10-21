@@ -224,7 +224,7 @@ async def webhook(request):
         pending_rewards = await get_pending_referral_rewards(payment["tg_id"])
         if pending_rewards:
             total_pending = sum(int(row["reward_days"]) for row in pending_rewards)
-            updated_client = add_days_to_client_by_sub_id(user["sub_id"], total_pending)
+            updated_client = add_days_to_client_by_sub_id(sub_id, total_pending)
             pending_expiry = int(updated_client.get("expiryTime", 0)) // 1000
             await update_user(
                 tg_id=user["tg_id"], username=user["username"], email=user["email"],
