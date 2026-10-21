@@ -2013,7 +2013,7 @@ async def admin_message_handler(message: Message):
             parts = [part.strip() for part in raw_text.split("|")]
             if len(parts) != 4:
                 await message.answer(
-                    "❌ нужно 4 поля через |:\\n"
+                    "❌ нужно 4 поля через |:\n"
                     "название | дата оплаты гггг-мм-дд | количество | цена за один сервер"
                 )
                 return
