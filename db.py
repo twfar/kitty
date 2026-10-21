@@ -31,6 +31,22 @@ async def init_db():
                 "ALTER TABLE users ADD COLUMN sub_id TEXT"
             )
 
+        if "subscription_class" not in columns:
+            await db.execute(
+                "ALTER TABLE users ADD COLUMN subscription_class TEXT NOT NULL DEFAULT 'expired'"
+            )
+
+        await db.execute("""
+            UPDATE users
+            SET subscription_class = CASE
+                WHEN sub_id IS NOT NULL
+                 AND expires_at IS NOT NULL
+                 AND expires_at > strftime('%s', 'now')
+                THEN 'active'
+                ELSE 'expired'
+            END
+        """)
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS trial_claims (
                 tg_id INTEGER PRIMARY KEY,
@@ -257,9 +273,10 @@ async def create_user(
                 subscription_url,
                 status,
                 created_at,
-                expires_at
+                expires_at,
+                subscription_class
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             tg_id,
             username,
@@ -269,6 +286,7 @@ async def create_user(
             status,
             created_at,
             expires_at,
+            "active" if sub_id and expires_at and expires_at > int(time.time()) else "expired",
         ))
 
         await db.commit()
@@ -292,7 +310,8 @@ async def update_user(
                 subscription_url = ?,
                 status = ?,
                 created_at = ?,
-                expires_at = ?
+                expires_at = ?,
+                subscription_class = ?
             WHERE tg_id = ?
         """, (
             username,
@@ -302,6 +321,7 @@ async def update_user(
             status,
             created_at,
             expires_at,
+            "active" if sub_id and expires_at and expires_at > int(time.time()) else "expired",
             tg_id,
         ))
 
