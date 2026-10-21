@@ -289,20 +289,15 @@ async def server_expenses_summary():
     payments = await get_server_payments()
     month = date.today().strftime("%Y-%m")
     due = [item for item in payments if item["due_date"][:7] == month]
-    total = sum(float(item["cost"]) * int(item["quantity"]) for item in payments)
-    due_total = sum(float(item["cost"]) * int(item["quantity"]) for item in due)
-    lines = [
-        "🧾 расходы на серверы",
-        f"💰 всего: {total:g} ₽",
-        f"📅 платежи в этом месяце: {due_total:g} ₽",
-    ]
+    lines = ["🧾 платежи за серверы в этом месяце"]
     if due:
-        lines.extend(["", "платежи:"])
         for item in sorted(due, key=lambda entry: entry["due_date"]):
             amount = float(item["cost"]) * int(item["quantity"])
-            lines.append(f"• {item['name']} — {item['due_date'][8:10]}.{item['due_date'][5:7]} — {amount:g} ₽")
+            lines.append(
+                f"• {item['name']} — {item['due_date'][8:10]}.{item['due_date'][5:7]} — {amount:g} ₽"
+            )
     else:
-        lines.append("• в этом месяце платежей нет")
+        lines.append("• платежей в этом месяце нет")
     return "\n".join(lines)
 
 
@@ -743,11 +738,12 @@ async def start(message: Message):
 
     if user and user["status"] != "pending":
         stats = await get_referral_stats(message.from_user.id)
+        menu_text = "главное меню kitty vpn\n\nнаш канал — @kittyvpnoff"
+        if message.from_user.id == ADMIN_ID:
+            menu_text += "\n\n" + await server_expenses_summary()
         await answer_menu(
             message,
-            "главное меню kitty vpn\n\n"
-            "наш канал — @kittyvpnoff\n\n"
-            f"{await server_expenses_summary()}",
+            menu_text,
             reply_markup=main_keyboard(stats["total"]),
             photo=MAIN_MENU_PHOTO,
         )
@@ -1036,11 +1032,12 @@ async def back_to_menu(callback: CallbackQuery):
         return
 
     await callback.answer()
+    menu_text = "главное меню kitty vpn\n\nнаш канал — @kittyvpnoff"
+    if callback.from_user.id == ADMIN_ID:
+        menu_text += "\n\n" + await server_expenses_summary()
     await edit_menu(
         callback.message,
-        "главное меню kitty vpn\n\n"
-        "наш канал — @kittyvpnoff\n\n"
-        f"{await server_expenses_summary()}",
+        menu_text,
         reply_markup=main_keyboard(),
     )
 
