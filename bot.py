@@ -372,6 +372,72 @@ async def admin_server_edit(callback: CallbackQuery):
     )
 
 
+@dp.callback_query(lambda c: c.data.startswith("server_payment_paid:"))
+async def server_payment_paid(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    try:
+        _, raw_id, raw_due_date = callback.data.split(":", 2)
+        payment_id = int(raw_id)
+        from datetime import date, timedelta
+        previous_due_date = date.fromisoformat(raw_due_date)
+    except (ValueError, TypeError):
+        await callback.answer("неверные данные напоминания", show_alert=True)
+        return
+
+    payments = await get_server_payments()
+    item = next((entry for entry in payments if entry["id"] == payment_id), None)
+    if item is None:
+        await callback.answer("сервер не найден", show_alert=True)
+        return
+    if item["due_date"] != previous_due_date.isoformat():
+        await callback.answer("это напоминание уже обработано", show_alert=True)
+        return
+
+    item["due_date"] = (previous_due_date + timedelta(days=31)).isoformat()
+    import json
+    await set_setting("server_payments", json.dumps(payments, ensure_ascii=False))
+    await callback.answer("оплата отмечена")
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer(
+        f"✅ оплата сервера «{item['name']}» отмечена.\n"
+        f"следующая дата оплаты: {item['due_date']}"
+    )
+
+
+@dp.callback_query(lambda c: c.data.startswith("server_payment_change:"))
+async def server_payment_change(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    try:
+        _, raw_id, raw_due_date = callback.data.split(":", 2)
+        payment_id = int(raw_id)
+    except (ValueError, TypeError):
+        await callback.answer("неверные данные напоминания", show_alert=True)
+        return
+
+    payments = await get_server_payments()
+    item = next((entry for entry in payments if entry["id"] == payment_id), None)
+    if item is None:
+        await callback.answer("сервер не найден", show_alert=True)
+        return
+    if item["due_date"] != raw_due_date:
+        await callback.answer("дата уже изменена", show_alert=True)
+        return
+
+    admin_action_waiting[ADMIN_ID] = f"server_payment_due_date:{payment_id}:{raw_due_date}"
+    await callback.answer()
+    await callback.message.answer(
+        f"📅 введи новую дату следующей оплаты сервера «{item['name']}» "
+        "в формате гггг-мм-дд.\n"
+        f"текущая дата: {item['due_date']}"
+    )
+
+
 @dp.callback_query(lambda c: c.data.startswith("admin_server_delete:"))
 async def admin_server_delete(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
@@ -2006,6 +2072,38 @@ async def admin_message_handler(message: Message):
             return
 
 
+        if action and action.startswith("server_payment_due_date:"):
+            from datetime import date
+            import json
+            try:
+                _, raw_id, old_due_date = action.split(":", 2)
+                payment_id = int(raw_id)
+                new_due_date = date.fromisoformat((message.text or "").strip()).isoformat()
+            except (ValueError, TypeError):
+                await message.answer("❌ неверная дата. введи её в формате гггг-мм-дд, например 2026-11-21.")
+                return
+
+            payments = await get_server_payments()
+            item = next((entry for entry in payments if entry["id"] == payment_id), None)
+            if item is None:
+                admin_action_waiting.pop(ADMIN_ID, None)
+                await message.answer("❌ сервер не найден.")
+                return
+            if item["due_date"] != old_due_date:
+                admin_action_waiting.pop(ADMIN_ID, None)
+                await message.answer("⚠️ дата уже была изменена. открой новое напоминание и попробуй ещё раз.")
+                return
+
+            item["due_date"] = new_due_date
+            await set_setting("server_payments", json.dumps(payments, ensure_ascii=False))
+            admin_action_waiting.pop(ADMIN_ID, None)
+            await message.answer(
+                f"✅ дата следующей оплаты сервера «{item['name']}» изменена на {new_due_date}.",
+                reply_markup=admin_keyboard(),
+            )
+            await show_server_payments(message)
+            return
+
         if action == "server_payment_add" or (action and action.startswith("server_payment_edit:")):
             from datetime import date
             import json
@@ -2516,7 +2614,25 @@ async def server_payment_reminders_worker(bot: Bot):
                         f"🔢 количество: {item['quantity']}\n"
                         f"💰 сумма: {amount:g} ₽",
                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                            [InlineKeyboardButton(text="⚙️ открыть расходы", callback_data="admin_server_payments")]
+                            [
+                                InlineKeyboardButton(
+                                    text="✅ оплачено",
+                                    callback_data=f"server_payment_paid:{item['id']}:{item['due_date']}",
+                                    style=ButtonStyle.SUCCESS,
+                                ),
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    text="📅 изменить дату следующей оплаты",
+                                    callback_data=f"server_payment_change:{item['id']}:{item['due_date']}",
+                                ),
+                            ],
+                            [
+                                InlineKeyboardButton(
+                                    text="⚙️ открыть расходы",
+                                    callback_data="admin_server_payments",
+                                ),
+                            ],
                         ]),
                     )
                     await mark_notification_sent(ADMIN_ID, notice_type, notice_key)
