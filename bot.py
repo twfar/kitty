@@ -1397,35 +1397,67 @@ async def admin_clear_test_user(callback: CallbackQuery):
     )
 
 
+def _expiry_in_cleanup_window(expiry: int, now: int) -> bool:
+    """Return whether expiry is between 3 and 10 days ago, inclusive."""
+    expiry_seconds = int(expiry)
+    if expiry_seconds > 10_000_000_000:
+        expiry_seconds //= 1000
+    age_seconds = now - expiry_seconds
+    return (
+        SUBSCRIPTION_DELETE_AFTER_DAYS * 24 * 3600 <= age_seconds
+        <= SUBSCRIPTION_DELETE_MAX_DAYS * 24 * 3600
+    )
+
+
 @dp.callback_query(lambda c: c.data == "admin_expired_subscriptions")
 async def admin_expired_subscriptions(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         await callback.answer("доступ запрещён", show_alert=True)
         return
 
+    await callback.answer("проверяю сроки в 3x-ui...")
     users = await get_active_users()
-    cutoff = int(time.time()) - SUBSCRIPTION_DELETE_AFTER_DAYS * 24 * 3600
-    expired_count = sum(
-        1 for user in users
-        if user["sub_id"] and int(user["expires_at"] or 0) <= cutoff
-    )
-    await callback.answer()
+    now = int(time.time())
+    expired_count = 0
+    failed_checks = 0
+
+    for user in users:
+        if not user["sub_id"]:
+            continue
+        try:
+            client = get_client(tg_id=int(user["tg_id"]))
+            if client:
+                client_data = client.get("client", client)
+                expiry = client_data.get("expiryTime")
+            else:
+                expiry = user["expires_at"]
+
+            if expiry and _expiry_in_cleanup_window(int(expiry), now):
+                expired_count += 1
+        except Exception:
+            failed_checks += 1
+            logging.exception(
+                "failed to check subscription expiry for user %s",
+                user["tg_id"],
+            )
+
     if expired_count == 0:
         await edit_menu(
             callback.message,
-            "🗑 старых подписок для удаления нет.\n\n"
-            f"удаляются только подписки, истёкшие более {SUBSCRIPTION_DELETE_AFTER_DAYS} дней назад.",
+            "🗑 подписок для очистки не найдено.\n\n"
+            "бот обрабатывает только подписки, истёкшие от 3 до 10 дней назад.\n"
+            + (f"не удалось проверить: {failed_checks}" if failed_checks else ""),
             reply_markup=admin_keyboard(),
         )
         return
 
     await edit_menu(
         callback.message,
-        "⚠️ удаление истёкших подписок\n\n"
-        f"найдено в базе: {expired_count}\n"
-        f"к удалению: подписки, истёкшие более {SUBSCRIPTION_DELETE_AFTER_DAYS} дней назад.\n\n"
-        "перед удалением бот повторно проверит срок в 3x-ui. "
-        "продлённые подписки останутся нетронутыми. записи пользователей и история оплат сохранятся.\n\n"
+        "⚠️ очистка истёкших подписок\n\n"
+        f"найдено: {expired_count}\n"
+        "к удалению: подписки, истёкшие от 3 до 10 дней назад включительно.\n"
+        "подписки старше 10 дней бот не тронет.\n\n"
+        "перед удалением срок будет проверен повторно. история оплат сохранится.\n\n"
         "продолжить?",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🗑 подтвердить удаление", callback_data="admin_expired_subscriptions_confirm", style=ButtonStyle.DANGER)],
@@ -1435,25 +1467,20 @@ async def admin_expired_subscriptions(callback: CallbackQuery):
 
 
 async def cleanup_expired_subscriptions() -> tuple[int, int, int]:
-    """Delete 3x-ui clients whose subscription expired more than three days ago."""
+    """Delete only subscriptions expired between 3 and 10 days ago."""
     users = await get_active_users()
     now = int(time.time())
-    cutoff = now - SUBSCRIPTION_DELETE_AFTER_DAYS * 24 * 3600
     deleted = skipped = failed = 0
 
     for user in users:
         tg_id = int(user["tg_id"])
         sub_id = user["sub_id"]
-        if not sub_id or int(user["expires_at"] or 0) > cutoff:
+        if not sub_id:
             continue
 
         try:
             latest_user = await get_user(tg_id)
-            if (
-                not latest_user
-                or latest_user["sub_id"] != sub_id
-                or int(latest_user["expires_at"] or 0) > cutoff
-            ):
+            if not latest_user or latest_user["sub_id"] != sub_id:
                 skipped += 1
                 continue
 
@@ -1461,19 +1488,20 @@ async def cleanup_expired_subscriptions() -> tuple[int, int, int]:
             if client:
                 client_data = client.get("client", client)
                 raw_expiry = client_data.get("expiryTime")
-                if not raw_expiry or int(raw_expiry) // 1000 > cutoff:
+                if not raw_expiry or not _expiry_in_cleanup_window(int(raw_expiry), now):
                     skipped += 1
                     continue
                 if not delete_client_by_tg_id(tg_id):
                     skipped += 1
                     continue
+            else:
+                db_expiry = int(latest_user["expires_at"] or 0)
+                if not db_expiry or not _expiry_in_cleanup_window(db_expiry, now):
+                    skipped += 1
+                    continue
 
             latest_user = await get_user(tg_id)
-            if (
-                latest_user
-                and latest_user["sub_id"] == sub_id
-                and int(latest_user["expires_at"] or 0) <= cutoff
-            ):
+            if latest_user and latest_user["sub_id"] == sub_id:
                 await update_user(
                     tg_id=tg_id,
                     username=latest_user["username"],
@@ -1489,13 +1517,16 @@ async def cleanup_expired_subscriptions() -> tuple[int, int, int]:
                 skipped += 1
         except Exception:
             failed += 1
-            logging.exception("automatic expired-subscription cleanup failed for user %s", tg_id)
+            logging.exception(
+                "automatic expired-subscription cleanup failed for user %s",
+                tg_id,
+            )
 
     return deleted, skipped, failed
 
 
 async def expired_subscription_cleanup_worker() -> None:
-    """Run expired subscription cleanup hourly without blocking bot startup."""
+    """Check eligible expired subscriptions hourly."""
     while True:
         try:
             deleted, skipped, failed = await cleanup_expired_subscriptions()
@@ -1519,7 +1550,7 @@ async def admin_expired_subscriptions_confirm(callback: CallbackQuery):
 
     await callback.answer("проверяю подписки...")
     users = await get_active_users()
-    cutoff = int(time.time()) - SUBSCRIPTION_DELETE_AFTER_DAYS * 24 * 3600
+    now = int(time.time())
     deleted = 0
     skipped = 0
     failed = 0
@@ -1531,32 +1562,16 @@ async def admin_expired_subscriptions_confirm(callback: CallbackQuery):
             continue
 
         try:
-            # Перед удалением сверяем актуальную запись, чтобы не затронуть
-            # подписку, которую пользователь успел продлить.
             latest_user = await get_user(tg_id)
             if not latest_user or latest_user["sub_id"] != sub_id:
                 skipped += 1
                 continue
 
             client = get_client(tg_id=tg_id)
-            panel_expiry = 0
             if client:
                 client_data = client.get("client", client)
-                raw_panel_expiry = client_data.get("expiryTime")
-                if not raw_panel_expiry:
-                    skipped += 1
-                    logging.warning(
-                        "skip cleanup for user %s: 3x-ui expiry is missing",
-                        tg_id,
-                    )
-                    continue
-                panel_expiry = int(raw_panel_expiry)
-                if panel_expiry > 10_000_000_000:
-                    panel_expiry //= 1000
-
-                # Срок в панели — источник истины: не пропускаем клиента
-                # только потому, что дата в локальной базе отличается.
-                if panel_expiry > cutoff:
+                raw_expiry = client_data.get("expiryTime")
+                if not raw_expiry or not _expiry_in_cleanup_window(int(raw_expiry), now):
                     skipped += 1
                     continue
 
@@ -1564,10 +1579,8 @@ async def admin_expired_subscriptions_confirm(callback: CallbackQuery):
                     skipped += 1
                     continue
             else:
-                # Если клиента уже нет в панели, очищаем старую запись базы
-                # только когда её срок тоже прошёл более трёх дней назад.
                 db_expiry = int(latest_user["expires_at"] or 0)
-                if not db_expiry or db_expiry > cutoff:
+                if not db_expiry or not _expiry_in_cleanup_window(db_expiry, now):
                     skipped += 1
                     continue
 
@@ -1588,15 +1601,18 @@ async def admin_expired_subscriptions_confirm(callback: CallbackQuery):
                 skipped += 1
         except Exception:
             failed += 1
-            logging.exception("failed to delete expired subscription for user %s", tg_id)
+            logging.exception(
+                "failed to delete expired subscription for user %s",
+                tg_id,
+            )
 
     await edit_menu(
         callback.message,
         "🗑 обработка истёкших подписок завершена\n\n"
         f"✅ очищено: {deleted}\n"
-        f"⏭ пропущено (подписка ещё действует или данные изменились): {skipped}\n"
+        f"⏭ пропущено (срок вне диапазона или данные изменились): {skipped}\n"
         f"❌ ошибок: {failed}\n\n"
-        "данные пользователей и история платежей сохранены.",
+        "бот трогает только подписки возрастом от 3 до 10 дней после окончания.",
         reply_markup=admin_keyboard(),
     )
 
