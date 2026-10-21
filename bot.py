@@ -2005,6 +2005,59 @@ async def admin_message_handler(message: Message):
             )
             return
 
+
+        if action == "server_payment_add" or (action and action.startswith("server_payment_edit:")):
+            from datetime import date
+            import json
+            raw_text = (message.text or "").strip()
+            parts = [part.strip() for part in raw_text.split("|")]
+            if len(parts) != 4:
+                await message.answer(
+                    "❌ нужно 4 поля через |:\\n"
+                    "название | дата оплаты гггг-мм-дд | количество | цена за один сервер"
+                )
+                return
+            name, due_date, quantity_raw, cost_raw = parts
+            try:
+                parsed_date = date.fromisoformat(due_date)
+                quantity = int(quantity_raw)
+                cost = float(cost_raw.replace(",", "."))
+                if not name or quantity <= 0 or cost < 0:
+                    raise ValueError
+            except ValueError:
+                await message.answer(
+                    "❌ проверь дату, количество и цену. дата: 2026-10-25; количество > 0; цена ≥ 0."
+                )
+                return
+            payments = await get_server_payments()
+            if action.startswith("server_payment_edit:"):
+                payment_id = int(action.split(":", 1)[1])
+                item = next((entry for entry in payments if entry["id"] == payment_id), None)
+                if item is None:
+                    await message.answer("❌ сервер не найден.")
+                    admin_action_waiting.pop(ADMIN_ID, None)
+                    return
+                item.update({
+                    "name": name,
+                    "due_date": parsed_date.isoformat(),
+                    "quantity": quantity,
+                    "cost": cost,
+                })
+            else:
+                payment_id = max((int(item["id"]) for item in payments), default=0) + 1
+                payments.append({
+                    "id": payment_id,
+                    "name": name,
+                    "due_date": parsed_date.isoformat(),
+                    "quantity": quantity,
+                    "cost": cost,
+                })
+            await set_setting("server_payments", json.dumps(payments, ensure_ascii=False))
+            admin_action_waiting.pop(ADMIN_ID, None)
+            await message.answer("✅ платёж сохранён.", reply_markup=admin_keyboard())
+            await show_server_payments(message)
+            return
+
         if action == "personal_target":
             target = (message.text or "").strip()
             if target.startswith("@"):
@@ -2252,44 +2305,6 @@ async def admin_message_handler(message: Message):
         )
         return
 
-
-    if action == "server_payment_add" or action.startswith("server_payment_edit:"):
-        from datetime import date
-        import json
-        parts = [part.strip() for part in text.split("|")]
-        if len(parts) != 4:
-            await message.answer(
-                "❌ нужно 4 поля через |:\n"
-                "название | дата оплаты гггг-мм-дд | количество | цена за один сервер"
-            )
-            return
-        name, due_date, quantity_raw, cost_raw = parts
-        try:
-            parsed_date = date.fromisoformat(due_date)
-            quantity = int(quantity_raw)
-            cost = float(cost_raw.replace(",", "."))
-            if not name or quantity <= 0 or cost < 0:
-                raise ValueError
-        except ValueError:
-            await message.answer("❌ проверь дату, количество и цену. дата: 2026-10-25; количество > 0; цена ≥ 0.")
-            return
-        payments = await get_server_payments()
-        if action.startswith("server_payment_edit:"):
-            payment_id = int(action.split(":", 1)[1])
-            item = next((entry for entry in payments if entry["id"] == payment_id), None)
-            if item is None:
-                await message.answer("❌ сервер не найден.")
-                admin_action_waiting.pop(ADMIN_ID, None)
-                return
-            item.update({"name": name, "due_date": parsed_date.isoformat(), "quantity": quantity, "cost": cost})
-        else:
-            payment_id = max((int(item["id"]) for item in payments), default=0) + 1
-            payments.append({"id": payment_id, "name": name, "due_date": parsed_date.isoformat(), "quantity": quantity, "cost": cost})
-        await set_setting("server_payments", json.dumps(payments, ensure_ascii=False))
-        admin_action_waiting.pop(ADMIN_ID, None)
-        await message.answer("✅ платёж сохранён.", reply_markup=admin_keyboard())
-        await show_server_payments(message)
-        return
 
     if action == "maintenance_message":
         await set_setting("maintenance_message", text)
