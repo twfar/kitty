@@ -18,7 +18,7 @@ from db import (
     get_pending_referral_rewards,
     mark_referral_rewards_applied,
 )
-from xui import renew_client_by_sub_id, add_days_to_client_by_sub_id
+from xui import create_client, renew_client_by_sub_id, add_days_to_client_by_sub_id
 
 
 def verify_signature(raw_body, timestamp, signature, secret):
@@ -118,18 +118,30 @@ async def webhook(request):
 
     user = await get_user(payment["tg_id"])
 
-    if not user or not user["sub_id"]:
+    if not user:
         await notify_admin(
             request.app["bot"],
-            "❌ оплата получена, но подписка не найдена\n\n"
+            "❌ оплата получена, но пользователь не найден в базе\n\n"
             f"🆔 telegram id: {payment['tg_id']}\n"
             f"💳 payment id: {payment_id}",
         )
         return web.Response(status=200, text="user not found")
 
     try:
+        sub_id = user["sub_id"]
+        if not sub_id:
+            # The expired client may have been deleted from 3x-ui.
+            # Recreate it first, then apply the paid period exactly once.
+            recreated = create_client(
+                tg_id=int(user["tg_id"]),
+                email=user["email"] or f"tg_{user['tg_id']}",
+                expiry_hours=0,
+                group="paid",
+            )
+            sub_id = recreated["sub_id"]
+
         updated = renew_client_by_sub_id(
-            user["sub_id"],
+            sub_id,
             int(payment["days"]),
             device_limit=int(payment["device_limit"]),
         )
@@ -139,8 +151,8 @@ async def webhook(request):
             tg_id=user["tg_id"],
             username=user["username"],
             email=user["email"],
-            sub_id=user["sub_id"],
-            subscription_url=f"https://kitvp.duckdns.org:2096/jsnn/{user['sub_id']}",
+            sub_id=sub_id,
+            subscription_url=f"https://kitvp.duckdns.org:2096/jsnn/{sub_id}",
             status="paid",
             created_at=user["created_at"],
             expires_at=expires_at,
@@ -152,7 +164,7 @@ async def webhook(request):
             request.app["bot"],
             "❌ оплата получена, но продление не удалось\n\n"
             f"💳 payment id: {payment_id}\n"
-            f"🔗 sub id: {user['sub_id']}",
+            f"🔗 sub id: {user['sub_id'] or 'не создан'}",
         )
         return web.Response(status=500, text="renewal failed")
 
