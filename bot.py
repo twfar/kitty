@@ -1853,10 +1853,6 @@ async def admin_purchase_toggle(callback: CallbackQuery):
     enabled = await get_setting("purchases_enabled", "1")
     new_value = "0" if enabled == "1" else "1"
     await set_setting("purchases_enabled", new_value)
-    await callback.answer(
-        "покупка и продление отключены" if new_value == "0"
-        else "покупка и продление включены"
-    )
     await admin_purchase_settings(callback)
 
 
