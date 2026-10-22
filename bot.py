@@ -199,10 +199,10 @@ dp.callback_query.outer_middleware(MaintenanceMiddleware())
 
 def main_keyboard(referral_count=0):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔗 подписка", callback_data="subscription", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton(text="🔗 подписка", icon_custom_emoji_id="5323580872123770259", callback_data="subscription", style=ButtonStyle.PRIMARY)],
         [
-            InlineKeyboardButton(text="👥 рефералы", callback_data="referrals"),
-            InlineKeyboardButton(text="🎟 промокод", callback_data="promo"),
+            InlineKeyboardButton(text="👥 рефералы", icon_custom_emoji_id="5323463284509141250", callback_data="referrals"),
+            InlineKeyboardButton(text="🎟 промокод", icon_custom_emoji_id="5325687643776770684", callback_data="promo"),
         ],
         [
             InlineKeyboardButton(text="🆘 поддержка", callback_data="support"),
@@ -222,7 +222,7 @@ def subscription_keyboard(subscription_page_url: str):
             InlineKeyboardButton(text="📱 устройства", callback_data="devices"),
             InlineKeyboardButton(text="💳 купить / продлить", callback_data="purchase"),
         ],
-        [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
+        [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="back_to_menu")],
     ])
 
 
@@ -237,7 +237,7 @@ def welcome_keyboard():
 def trial_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎁 начать trial", callback_data="start_trial", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")]
+        [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="back_to_menu")]
     ])
 
 
@@ -271,7 +271,7 @@ def server_payments_keyboard(payments):
             InlineKeyboardButton(text="🗑", callback_data=f"admin_server_delete:{item['id']}"),
         ])
     rows.append([InlineKeyboardButton(text="➕ добавить сервер", callback_data="admin_server_add")])
-    rows.append([InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")])
+    rows.append([InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -472,7 +472,7 @@ def admin_subscription_keyboard(limit):
             InlineKeyboardButton(text="+", callback_data="admin_sub_plus"),
         ],
         [InlineKeyboardButton(text="⏱ изменить срок", callback_data="admin_sub_time", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+        [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_back")],
     ])
 
 
@@ -543,7 +543,7 @@ async def send_subscription_info(message: Message, user):
             "твоя подписка не найдена в системе.\n\nесли это ошибка, напиши в поддержку:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL, style=ButtonStyle.PRIMARY)],
-                [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
+                [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="back_to_menu")],
             ]),
         )
         return
@@ -990,7 +990,7 @@ async def devices(callback: CallbackQuery):
         f"используется: {len(device_list)} / {limit}\n\n{text}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🗑 удалить все устройства", callback_data="delete_all_hwid", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="back_to_subscription")],
         ]),
     )
 
@@ -1075,7 +1075,7 @@ async def referrals(callback: CallbackQuery):
         f"твоя ссылка:\n{link}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📋 скопировать ссылку", copy_text=CopyTextButton(text=link), style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="back_to_menu")],
         ]),
     )
 
@@ -1114,7 +1114,7 @@ def purchase_selection_keyboard(devices: int):
             InlineKeyboardButton(text="🚫" if devices == 10 else "+", callback_data="purchase_device_value" if devices == 10 else "purchase_device_plus"),
         ],
         [InlineKeyboardButton(text=f"✅ далее · {monthly_price} ₽/мес", callback_data="purchase_to_months", style=ButtonStyle.SUCCESS)],
-        [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
+        [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="back_to_subscription")],
     ])
 
 
@@ -1126,7 +1126,7 @@ def purchase_months_keyboard(devices: int, months: int):
             InlineKeyboardButton(text="3 месяца · −10%", callback_data="purchase_months_3"),
         ],
         [InlineKeyboardButton(text=f"✅ подтвердить · {format_price(total)} ₽", callback_data="purchase_confirm", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton(text="🔙 назад", callback_data="purchase_back_devices")],
+        [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="purchase_back_devices")],
     ])
 
 
@@ -1308,7 +1308,7 @@ async def purchase_confirm(callback: CallbackQuery):
             "❌ не удалось создать платёж.\n\n"
             "попробуй ещё раз или напиши в поддержку.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
+                [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="back_to_subscription")],
             ]),
         )
         return
@@ -1321,7 +1321,7 @@ async def purchase_confirm(callback: CallbackQuery):
         "после успешной оплаты подписка выдастся автоматически.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💳 оплатить", url=payment["pay_url"], style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_subscription")],
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="back_to_subscription")],
         ]),
     )
 
@@ -1333,7 +1333,7 @@ async def support(callback: CallbackQuery):
         "🆘 поддержка\n\nесли что-то не работает или есть вопрос — создай обращение в тикет-системе:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🎫 открыть тикет", url=SUPPORT_URL, style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="back_to_menu")],
         ]),
     )
 
@@ -1346,7 +1346,7 @@ async def about_service(callback: CallbackQuery):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔒 политика конфиденциальности", url=PRIVACY_URL, style=ButtonStyle.PRIMARY)],
             [InlineKeyboardButton(text="📄 пользовательское соглашение", url=OFFER_URL)],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="back_to_menu")],
         ]),
     )
 
@@ -1374,7 +1374,7 @@ async def promo(callback: CallbackQuery):
         callback.message,
         "🎟 промокод\n\nотправь промокод одним сообщением.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="back_to_menu")],
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="back_to_menu")],
         ]),
     )
 
@@ -1662,7 +1662,7 @@ def broadcast_group_keyboard():
             InlineKeyboardButton(text="💳 paid", callback_data="admin_broadcast_group:paid"),
         ],
         [InlineKeyboardButton(text="⌛ истёкшие", callback_data="admin_broadcast_group:expired")],
-        [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+        [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_back")],
     ])
 
 
@@ -1714,7 +1714,7 @@ async def admin_broadcast_group(callback: CallbackQuery):
         "отправь одно сообщение для рассылки.\n"
         "можно отправлять текст, фото, видео, документ и другие поддерживаемые telegram-сообщения.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_broadcast")]
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_broadcast")]
         ]),
     )
 
@@ -1764,7 +1764,7 @@ async def admin_personal_message(callback: CallbackQuery):
         "💬 личное сообщение\n\n"
         "отправь telegram id или @username пользователя:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_back")]
         ]),
     )
 
@@ -1839,7 +1839,7 @@ async def admin_purchase_settings(callback: CallbackQuery):
                 callback_data="admin_purchase_toggle",
                 style=ButtonStyle.PRIMARY if enabled == "1" else ButtonStyle.SUCCESS,
             )],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_back")],
         ]),
     )
 
@@ -1880,7 +1880,7 @@ async def admin_maintenance(callback: CallbackQuery):
                 callback_data="admin_maintenance_toggle",
             )],
             [InlineKeyboardButton(text="✏️ изменить сообщение", callback_data="admin_maintenance_message", style=ButtonStyle.PRIMARY)],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_back")],
         ]),
     )
 
@@ -1912,7 +1912,7 @@ async def admin_maintenance_message(callback: CallbackQuery):
         "отправь новое сообщение одним сообщением.\n"
         "оно будет отправляться пользователям при /start.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_maintenance")],
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_maintenance")],
         ]),
     )
 
@@ -1948,7 +1948,7 @@ async def admin_promos(callback: CallbackQuery):
             callback.message,
             "📋 промокоды\n\nпромокодов пока нет.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+                [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_back")],
             ]),
         )
         return
@@ -1968,7 +1968,7 @@ async def admin_promos(callback: CallbackQuery):
         "\n\n".join(lines),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🗑 удалить промокод", callback_data="admin_delete_promo")],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_back")],
         ]),
     )
 
@@ -1987,7 +1987,7 @@ async def admin_delete_promo(callback: CallbackQuery):
         "отправь код промокода, который нужно удалить.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📋 посмотреть промокоды", callback_data="admin_promos")],
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_back")],
         ]),
     )
 
@@ -2034,7 +2034,7 @@ async def admin_create_promo(callback: CallbackQuery):
         "`KITTY7 7 10`\n\n"
         "лимит 0 = без ограничений.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_back")]
         ]),
     )
 
@@ -2056,7 +2056,7 @@ async def admin_inbound_ids(callback: CallbackQuery):
         "пример: 8, 31, 35, 41, 54\n\n"
         "изменение повлияет только на новых клиентов. существующие подписки не изменятся.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
+            [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_back")]
         ]),
     )
 
@@ -2262,7 +2262,7 @@ async def admin_message_handler(message: Message):
                 f"🆔 id: {user['tg_id']}\n\n"
                 "теперь отправь сообщение.",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")]
+                    [InlineKeyboardButton(text="🔙 назад", icon_custom_emoji_id="5323433095184016836", callback_data="admin_back")]
                 ]),
             )
             return
