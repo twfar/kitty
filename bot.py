@@ -162,6 +162,17 @@ async def edit_menu(message: Message, text: str, reply_markup=None):
 
 class MaintenanceMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
+        if isinstance(event, CallbackQuery):
+            callback_data = event.data or ""
+            if callback_data == "purchase" or callback_data.startswith("purchase_"):
+                purchases_enabled = await get_setting("purchases_enabled", "1")
+                if purchases_enabled != "1":
+                    await event.answer(
+                        "покупка и продление подписок временно отключены.",
+                        show_alert=True,
+                    )
+                    return
+
         if event.from_user.id == ADMIN_ID:
             return await handler(event, data)
 
@@ -241,6 +252,7 @@ def admin_keyboard():
         ],
         [InlineKeyboardButton(text="🖥 оплата серверов", callback_data="admin_server_payments")],
         [InlineKeyboardButton(text="🔧 технические работы", callback_data="admin_maintenance")],
+        [InlineKeyboardButton(text="💳 управление покупками", callback_data="admin_purchase_settings")],
         [InlineKeyboardButton(text="🌐 inbound IDs", callback_data="admin_inbound_ids")],
         [InlineKeyboardButton(text="🗑 удалить истёкшие подписки", callback_data="admin_expired_subscriptions")],
         [InlineKeyboardButton(text="🗑 очистить тестовый аккаунт", callback_data="admin_clear_test_user")],
@@ -1804,6 +1816,48 @@ async def admin_personal_cancel(callback: CallbackQuery):
     admin_action_waiting.pop(ADMIN_ID, None)
     await callback.answer("отменено")
     await edit_menu(callback.message, "⚙️ админ-панель\n\nвыбери действие:", reply_markup=admin_keyboard())
+
+
+@dp.callback_query(lambda c: c.data == "admin_purchase_settings")
+async def admin_purchase_settings(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    enabled = await get_setting("purchases_enabled", "1")
+    await callback.answer()
+    await edit_menu(
+        callback.message,
+        "💳 управление покупками\n\n"
+        f"покупка и продление подписок: {'включены' if enabled == '1' else 'отключены'}\n\n"
+        "при отключении пользователи не смогут открыть меню покупки, "
+        "перейти по старым кнопкам оплаты или сформировать новую платёжную ссылку.\n"
+        "существующие подписки продолжат работать.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="🔴 отключить покупки" if enabled == "1" else "🟢 включить покупки",
+                callback_data="admin_purchase_toggle",
+                style=ButtonStyle.PRIMARY if enabled == "1" else ButtonStyle.SUCCESS,
+            )],
+            [InlineKeyboardButton(text="🔙 назад", callback_data="admin_back")],
+        ]),
+    )
+
+
+@dp.callback_query(lambda c: c.data == "admin_purchase_toggle")
+async def admin_purchase_toggle(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer("доступ запрещён", show_alert=True)
+        return
+
+    enabled = await get_setting("purchases_enabled", "1")
+    new_value = "0" if enabled == "1" else "1"
+    await set_setting("purchases_enabled", new_value)
+    await callback.answer(
+        "покупка и продление отключены" if new_value == "0"
+        else "покупка и продление включены"
+    )
+    await admin_purchase_settings(callback)
 
 
 @dp.callback_query(lambda c: c.data == "admin_maintenance")
