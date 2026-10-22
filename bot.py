@@ -2100,6 +2100,24 @@ async def admin_message_handler(message: Message):
             if not message.text:
                 return
 
+        # просмотрщик premium emoji доступен только владельцу бота.
+        # если админ не находится внутри другого сценария, число считается emoji id.
+        if (
+            message.from_user.id == ADMIN_ID
+            and not action
+            and message.text
+            and message.text.strip().isdigit()
+        ):
+            emoji_id = message.text.strip()
+            try:
+                await message.answer(
+                    **Text(CustomEmoji("⭐", custom_emoji_id=emoji_id)).as_kwargs()
+                )
+            except Exception:
+                logging.exception("failed to render custom emoji id %s", emoji_id)
+                await message.answer("не удалось показать эмодзи. проверь id.")
+            return
+
     if message.from_user.id == ADMIN_ID:
         action = admin_action_waiting.get(message.from_user.id)
 
